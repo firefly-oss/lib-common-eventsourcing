@@ -1,0 +1,2 @@
+com.firefly.common.eventsourcing.config.EventSourcingAutoConfiguration
+com.firefly.common.eventsourcing.config.EventSourcingProjectionAutoConfiguration
