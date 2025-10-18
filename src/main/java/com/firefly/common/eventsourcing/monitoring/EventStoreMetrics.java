@@ -132,6 +132,9 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Record an append operation with timing and event count.
+     *
+     * @param duration the duration of the append operation
+     * @param eventCount the number of events appended
      */
     public void recordAppendOperation(Duration duration, int eventCount) {
         appendOperationTimer.record(duration);
@@ -143,6 +146,9 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Record a load operation with timing and event count.
+     *
+     * @param duration the duration of the load operation
+     * @param eventCount the number of events loaded
      */
     public void recordLoadOperation(Duration duration, int eventCount) {
         loadOperationTimer.record(duration);
@@ -153,6 +159,8 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Record a query operation with timing.
+     *
+     * @param duration the duration of the query operation
      */
     public void recordQueryOperation(Duration duration) {
         queryOperationTimer.record(duration);
@@ -162,6 +170,9 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Record an error by type.
+     *
+     * @param errorType the type/category of the error
+     * @param error the throwable that occurred
      */
     public void recordError(String errorType, Throwable error) {
         Counter.builder("event.store.errors")
@@ -186,6 +197,8 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Start timing an operation.
+     *
+     * @return a timer sample to stop later
      */
     public Sample startTimer() {
         return Timer.start(meterRegistry);
@@ -193,6 +206,8 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Update active connection count.
+     *
+     * @param count the number of active connections
      */
     public void setActiveConnections(long count) {
         activeConnections.set(count);
@@ -200,6 +215,8 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Update total aggregate count.
+     *
+     * @param count the total number of aggregates
      */
     public void setTotalAggregates(long count) {
         totalAggregates.set(count);
@@ -207,6 +224,8 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Update total event count.
+     *
+     * @param count the total number of events
      */
     public void setTotalEvents(long count) {
         totalEvents.set(count);
@@ -261,6 +280,8 @@ public class EventStoreMetrics implements HealthIndicator {
     
     /**
      * Get performance summary for monitoring dashboards.
+     *
+     * @return performance summary with all metrics
      */
     public PerformanceSummary getPerformanceSummary() {
         return PerformanceSummary.builder()
@@ -311,6 +332,11 @@ public class EventStoreMetrics implements HealthIndicator {
             this.lastHealthCheck = builder.lastHealthCheck;
         }
         
+        /**
+         * Creates a new builder for PerformanceSummary.
+         *
+         * @return a new builder instance
+         */
         public static Builder builder() {
             return new Builder();
         }
@@ -343,19 +369,36 @@ public class EventStoreMetrics implements HealthIndicator {
             private boolean isHealthy;
             private Instant lastHealthCheck;
             
+            /** Sets events appended count. @param eventsAppended the count @return this builder */
             public Builder eventsAppended(double eventsAppended) { this.eventsAppended = eventsAppended; return this; }
+            /** Sets events loaded count. @param eventsLoaded the count @return this builder */
             public Builder eventsLoaded(double eventsLoaded) { this.eventsLoaded = eventsLoaded; return this; }
+            /** Sets total errors count. @param totalErrors the count @return this builder */
             public Builder totalErrors(double totalErrors) { this.totalErrors = totalErrors; return this; }
+            /** Sets concurrency conflicts count. @param concurrencyConflicts the count @return this builder */
             public Builder concurrencyConflicts(double concurrencyConflicts) { this.concurrencyConflicts = concurrencyConflicts; return this; }
+            /** Sets average append time. @param averageAppendTime the time @return this builder */
             public Builder averageAppendTime(double averageAppendTime) { this.averageAppendTime = averageAppendTime; return this; }
+            /** Sets average load time. @param averageLoadTime the time @return this builder */
             public Builder averageLoadTime(double averageLoadTime) { this.averageLoadTime = averageLoadTime; return this; }
+            /** Sets average batch size. @param averageBatchSize the size @return this builder */
             public Builder averageBatchSize(double averageBatchSize) { this.averageBatchSize = averageBatchSize; return this; }
+            /** Sets active connections count. @param activeConnections the count @return this builder */
             public Builder activeConnections(long activeConnections) { this.activeConnections = activeConnections; return this; }
+            /** Sets total events count. @param totalEvents the count @return this builder */
             public Builder totalEvents(long totalEvents) { this.totalEvents = totalEvents; return this; }
+            /** Sets total aggregates count. @param totalAggregates the count @return this builder */
             public Builder totalAggregates(long totalAggregates) { this.totalAggregates = totalAggregates; return this; }
+            /** Sets healthy status. @param isHealthy the status @return this builder */
             public Builder isHealthy(boolean isHealthy) { this.isHealthy = isHealthy; return this; }
+            /** Sets last health check time. @param lastHealthCheck the time @return this builder */
             public Builder lastHealthCheck(Instant lastHealthCheck) { this.lastHealthCheck = lastHealthCheck; return this; }
             
+            /**
+             * Builds the PerformanceSummary instance.
+             *
+             * @return the built PerformanceSummary
+             */
             public PerformanceSummary build() {
                 return new PerformanceSummary(this);
             }
