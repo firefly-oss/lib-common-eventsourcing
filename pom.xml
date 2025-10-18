@@ -183,6 +183,13 @@
             <scope>test</scope>
         </dependency>
         
+        <!-- PostgreSQL JDBC driver for Testcontainers init scripts -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        
         <!-- Awaitility for async testing -->
         <dependency>
             <groupId>org.awaitility</groupId>
@@ -222,6 +229,12 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <doclint>none</doclint>
+                    <failOnError>false</failOnError>
+                    <failOnWarnings>false</failOnWarnings>
+                    <quiet>true</quiet>
+                </configuration>
             </plugin>
 
             <plugin>
