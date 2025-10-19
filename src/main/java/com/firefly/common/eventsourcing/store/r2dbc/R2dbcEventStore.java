@@ -23,11 +23,14 @@ import com.firefly.common.eventsourcing.config.EventSourcingProperties;
 import com.firefly.common.eventsourcing.domain.Event;
 import com.firefly.common.eventsourcing.domain.EventEnvelope;
 import com.firefly.common.eventsourcing.domain.EventStream;
+import com.firefly.common.eventsourcing.logging.EventSourcingLoggingContext;
+import com.firefly.common.eventsourcing.outbox.EventOutboxService;
 import com.firefly.common.eventsourcing.store.*;
+import com.firefly.common.eventsourcing.transaction.EventSourcingTransactionalAspect;
 import io.r2dbc.postgresql.codec.Json;
 import io.r2dbc.spi.ConnectionFactory;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.data.relational.core.query.Criteria;
@@ -75,7 +78,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * CREATE INDEX idx_events_created_at ON events(created_at);
  * </pre>
  */
-@RequiredArgsConstructor
 @Slf4j
 public class R2dbcEventStore implements EventStore {
 
@@ -88,33 +90,84 @@ public class R2dbcEventStore implements EventStore {
     private final ConnectionFactory connectionFactory;
     private final AtomicLong globalSequenceCounter = new AtomicLong(0);
 
+    // Optional: Event Outbox Service for reliable event publishing
+    @Autowired(required = false)
+    private EventOutboxService outboxService;
+
+    public R2dbcEventStore(DatabaseClient databaseClient,
+                          R2dbcEntityTemplate entityTemplate,
+                          ObjectMapper objectMapper,
+                          EventSourcingProperties properties,
+                          ReactiveTransactionManager transactionManager,
+                          TransactionalOperator transactionalOperator,
+                          ConnectionFactory connectionFactory) {
+        this.databaseClient = databaseClient;
+        this.entityTemplate = entityTemplate;
+        this.objectMapper = objectMapper;
+        this.properties = properties;
+        this.transactionManager = transactionManager;
+        this.transactionalOperator = transactionalOperator;
+        this.connectionFactory = connectionFactory;
+    }
+
     @Override
-    public Mono<EventStream> appendEvents(UUID aggregateId, 
-                                         String aggregateType, 
-                                         List<Event> events, 
+    public Mono<EventStream> appendEvents(UUID aggregateId,
+                                         String aggregateType,
+                                         List<Event> events,
                                          long expectedVersion,
                                          Map<String, Object> metadata) {
-        
+
         if (events == null || events.isEmpty()) {
+            log.warn("Attempted to append null or empty events list for aggregate {}", aggregateId);
             return Mono.error(new IllegalArgumentException("Events list cannot be null or empty"));
         }
 
-        log.debug("Appending {} events to aggregate {}, expected version: {}", 
-                 events.size(), aggregateId, expectedVersion);
+        long startTime = System.currentTimeMillis();
+        EventSourcingLoggingContext.setAggregateContext(aggregateId, aggregateType);
+        EventSourcingLoggingContext.setOperation("appendEvents");
+
+        log.info("Appending {} events to aggregate {} (type: {}), expected version: {}",
+                 events.size(), aggregateId, aggregateType, expectedVersion);
+
+        if (log.isDebugEnabled()) {
+            events.forEach(event -> log.debug("Event to append: type={}, eventType={}",
+                    event.getClass().getSimpleName(), event.getEventType()));
+        }
 
         return transactionalOperator.transactional(
                 checkConcurrency(aggregateId, aggregateType, expectedVersion)
                         .flatMap(currentVersion -> {
+                            log.debug("Concurrency check passed. Current version: {}, creating envelopes", currentVersion);
                             List<EventEnvelope> envelopes = createEventEnvelopes(
                                     events, aggregateType, currentVersion, metadata);
+
+                            log.debug("Created {} event envelopes, inserting into database", envelopes.size());
                             return insertEvents(envelopes)
-                                    .then(Mono.fromSupplier(() -> EventStream.of(aggregateId, aggregateType, envelopes)));
+                                    .then(saveToOutboxIfEnabled(envelopes))
+                                    .thenReturn(EventStream.of(aggregateId, aggregateType, envelopes))
+                                    .transform(mono -> EventSourcingTransactionalAspect.addPendingEvents(mono, envelopes));
                         })
         )
-        .doOnSuccess(stream -> log.debug("Successfully appended {} events to aggregate {}", 
-                                       events.size(), aggregateId))
-        .doOnError(error -> log.error("Failed to append events to aggregate {}: {}", 
-                                    aggregateId, error.getMessage()));
+        .doOnSuccess(stream -> {
+            long duration = System.currentTimeMillis() - startTime;
+            EventSourcingLoggingContext.setDuration(duration);
+            log.info("Successfully appended {} events to aggregate {} in {}ms",
+                    events.size(), aggregateId, duration);
+            EventSourcingLoggingContext.clearAll();
+        })
+        .doOnError(error -> {
+            long duration = System.currentTimeMillis() - startTime;
+            EventSourcingLoggingContext.setDuration(duration);
+
+            if (error instanceof ConcurrencyException) {
+                log.warn("Concurrency conflict when appending events to aggregate {}: {}",
+                        aggregateId, error.getMessage());
+            } else {
+                log.error("Failed to append events to aggregate {} after {}ms: {}",
+                        aggregateId, duration, error.getMessage(), error);
+            }
+            EventSourcingLoggingContext.clearAll();
+        });
     }
 
     @Override
@@ -124,14 +177,19 @@ public class R2dbcEventStore implements EventStore {
 
     @Override
     public Mono<EventStream> loadEventStream(UUID aggregateId, String aggregateType, long fromVersion) {
-        log.debug("Loading event stream for aggregate {}, from version: {}", aggregateId, fromVersion);
+        long startTime = System.currentTimeMillis();
+        EventSourcingLoggingContext.setAggregateContext(aggregateId, aggregateType);
+        EventSourcingLoggingContext.setOperation("loadEventStream");
+
+        log.info("Loading event stream for aggregate {} (type: {}), from version: {}",
+                aggregateId, aggregateType, fromVersion);
 
         String sql = """
                 SELECT event_id, aggregate_id, aggregate_type, aggregate_version, global_sequence,
                        event_type, event_data, metadata, created_at
-                FROM events 
-                WHERE aggregate_id = :aggregateId 
-                  AND aggregate_type = :aggregateType 
+                FROM events
+                WHERE aggregate_id = :aggregateId
+                  AND aggregate_type = :aggregateType
                   AND aggregate_version >= :fromVersion
                 ORDER BY aggregate_version ASC
                 """;
@@ -144,8 +202,19 @@ public class R2dbcEventStore implements EventStore {
                 .all()
                 .collectList()
                 .map(envelopes -> EventStream.of(aggregateId, aggregateType, envelopes))
-                .doOnSuccess(stream -> log.debug("Loaded {} events for aggregate {}", 
-                                               stream.size(), aggregateId));
+                .doOnSuccess(stream -> {
+                    long duration = System.currentTimeMillis() - startTime;
+                    EventSourcingLoggingContext.setDuration(duration);
+                    log.info("Loaded {} events for aggregate {} in {}ms",
+                            stream.size(), aggregateId, duration);
+                    EventSourcingLoggingContext.clearAll();
+                })
+                .doOnError(error -> {
+                    long duration = System.currentTimeMillis() - startTime;
+                    log.error("Failed to load event stream for aggregate {} after {}ms: {}",
+                            aggregateId, duration, error.getMessage(), error);
+                    EventSourcingLoggingContext.clearAll();
+                });
     }
 
     @Override
@@ -351,17 +420,23 @@ public class R2dbcEventStore implements EventStore {
      */
     private EventEntity toEventEntity(EventEnvelope envelope) {
         try {
-            return new EventEntity(
-                envelope.getEventId(),
-                envelope.getAggregateId(),
-                envelope.getAggregateType(),
-                envelope.getAggregateVersion(),
-                envelope.getGlobalSequence(),
-                envelope.getEventType(),
-                serializeEvent(envelope.getEvent()),
-                serializeMetadata(envelope.getMetadata()),
-                envelope.getCreatedAt()
-            );
+            EventEntity entity = new EventEntity();
+            entity.setEventId(envelope.getEventId());
+            entity.setAggregateId(envelope.getAggregateId());
+            entity.setAggregateType(envelope.getAggregateType());
+            entity.setAggregateVersion(envelope.getAggregateVersion());
+            entity.setGlobalSequence(envelope.getGlobalSequence());
+            entity.setEventType(envelope.getEventType());
+            entity.setEventData(serializeEvent(envelope.getEvent()));
+            entity.setMetadata(serializeMetadata(envelope.getMetadata()));
+            entity.setCreatedAt(envelope.getCreatedAt());
+
+            // Set production fields from MDC context if available
+            entity.setCorrelationId(org.slf4j.MDC.get(EventSourcingLoggingContext.CORRELATION_ID));
+            entity.setTenantId(org.slf4j.MDC.get(EventSourcingLoggingContext.TENANT_ID));
+            entity.setCreatedBy(org.slf4j.MDC.get(EventSourcingLoggingContext.USER_ID));
+
+            return entity;
         } catch (JsonProcessingException e) {
             throw new EventStoreException("Failed to serialize event for database persistence", e);
         }
@@ -511,5 +586,27 @@ public class R2dbcEventStore implements EventStore {
             // Use String for H2 and other databases
             return spec.bind(paramName, jsonData);
         }
+    }
+
+    /**
+     * Saves event envelopes to the outbox if the outbox service is enabled.
+     * This is called within the same transaction as the event store write,
+     * ensuring atomicity between event persistence and outbox entry creation.
+     *
+     * @param envelopes the event envelopes to save to outbox
+     * @return mono that completes when all envelopes are saved to outbox
+     */
+    private Mono<Void> saveToOutboxIfEnabled(List<EventEnvelope> envelopes) {
+        if (outboxService == null) {
+            log.debug("Outbox service not configured, skipping outbox write");
+            return Mono.empty();
+        }
+
+        log.debug("Saving {} events to outbox", envelopes.size());
+        return Flux.fromIterable(envelopes)
+                .flatMap(envelope -> outboxService.saveToOutbox(envelope))
+                .then()
+                .doOnSuccess(v -> log.debug("Successfully saved {} events to outbox", envelopes.size()))
+                .doOnError(error -> log.error("Failed to save events to outbox", error));
     }
 }
