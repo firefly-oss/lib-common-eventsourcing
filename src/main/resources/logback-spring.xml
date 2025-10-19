@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Property definitions -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="eventsourcing"/>
+    <property name="LOG_PATH" value="${LOG_PATH:-${java.io.tmpdir:-/tmp}/logs}"/>
+    <property name="LOG_FILE" value="${LOG_FILE:-${LOG_PATH}/eventsourcing}"/>
+    
+    <!-- Console appender with JSON output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>eventType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>operation</includeMdcKeyName>
+            <includeMdcKeyName>duration</includeMdcKeyName>
+            <includeMdcKeyName>version</includeMdcKeyName>
+            <includeMdcKeyName>destination</includeMdcKeyName>
+            <includeMdcKeyName>outboxId</includeMdcKeyName>
+            <includeMdcKeyName>status</includeMdcKeyName>
+            <includeMdcKeyName>retryCount</includeMdcKeyName>
+            <includeMdcKeyName>priority</includeMdcKeyName>
+            <customFields>{"application":"${APP_NAME}","environment":"${SPRING_PROFILES_ACTIVE:-default}"}</customFields>
+            <throwableConverter class="net.logstash.logback.stacktrace.ShortenedThrowableConverter">
+                <maxDepthPerThrowable>30</maxDepthPerThrowable>
+                <maxLength>2048</maxLength>
+                <shortenedClassNameLength>20</shortenedClassNameLength>
+                <exclude>^sun\.reflect\..*\.invoke</exclude>
+                <exclude>^net\.sf\.cglib\.proxy\.MethodProxy\.invoke</exclude>
+                <rootCauseFirst>true</rootCauseFirst>
+            </throwableConverter>
+        </encoder>
+    </appender>
+
+    <!-- Console appender with colored output (for local development) -->
+    <appender name="CONSOLE_PRETTY" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %highlight(%-5level) [%thread] %cyan(%logger{36}) - %msg %X{correlationId:+[correlationId=%X{correlationId}]} %X{aggregateId:+[aggregateId=%X{aggregateId}]} %X{tenantId:+[tenantId=%X{tenantId}]}%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <!-- File appender for all logs (JSON format) -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>eventType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>operation</includeMdcKeyName>
+            <includeMdcKeyName>duration</includeMdcKeyName>
+            <includeMdcKeyName>version</includeMdcKeyName>
+            <includeMdcKeyName>destination</includeMdcKeyName>
+            <includeMdcKeyName>outboxId</includeMdcKeyName>
+            <includeMdcKeyName>status</includeMdcKeyName>
+            <includeMdcKeyName>retryCount</includeMdcKeyName>
+            <includeMdcKeyName>priority</includeMdcKeyName>
+            <customFields>{"application":"${APP_NAME}","environment":"${SPRING_PROFILES_ACTIVE:-default}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE}-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>10GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+
+
+    <!-- Event Store specific appender (JSON) -->
+    <appender name="EVENT_STORE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}-eventstore.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>eventType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>operation</includeMdcKeyName>
+            <includeMdcKeyName>duration</includeMdcKeyName>
+            <includeMdcKeyName>version</includeMdcKeyName>
+            <customFields>{"component":"eventstore","application":"${APP_NAME}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE}-eventstore-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Aggregate specific appender (JSON) -->
+    <appender name="AGGREGATE_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}-aggregate.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>eventType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>version</includeMdcKeyName>
+            <customFields>{"component":"aggregate","application":"${APP_NAME}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE}-aggregate-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Event Publisher specific appender (JSON) -->
+    <appender name="PUBLISHER_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}-publisher.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>eventType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>destination</includeMdcKeyName>
+            <customFields>{"component":"publisher","application":"${APP_NAME}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE}-publisher-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Event Outbox specific appender (JSON) -->
+    <appender name="OUTBOX_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}-outbox.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>eventType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>outboxId</includeMdcKeyName>
+            <includeMdcKeyName>status</includeMdcKeyName>
+            <includeMdcKeyName>retryCount</includeMdcKeyName>
+            <includeMdcKeyName>priority</includeMdcKeyName>
+            <customFields>{"component":"outbox","application":"${APP_NAME}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE}-outbox-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Snapshot specific appender (JSON) -->
+    <appender name="SNAPSHOT_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_FILE}-snapshot.log</file>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>correlationId</includeMdcKeyName>
+            <includeMdcKeyName>causationId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateId</includeMdcKeyName>
+            <includeMdcKeyName>aggregateType</includeMdcKeyName>
+            <includeMdcKeyName>tenantId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>version</includeMdcKeyName>
+            <includeMdcKeyName>operation</includeMdcKeyName>
+            <customFields>{"component":"snapshot","application":"${APP_NAME}"}</customFields>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_FILE}-snapshot-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Async appenders for better performance -->
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="FILE"/>
+    </appender>
+
+    <appender name="ASYNC_EVENT_STORE_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="EVENT_STORE_FILE"/>
+    </appender>
+
+    <appender name="ASYNC_AGGREGATE_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="AGGREGATE_FILE"/>
+    </appender>
+
+    <appender name="ASYNC_PUBLISHER_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="PUBLISHER_FILE"/>
+    </appender>
+
+    <appender name="ASYNC_OUTBOX_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="OUTBOX_FILE"/>
+    </appender>
+
+    <appender name="ASYNC_SNAPSHOT_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="SNAPSHOT_FILE"/>
+    </appender>
+
+    <!-- Logger configurations -->
+
+    <!-- Event Store logging -->
+    <logger name="com.firefly.common.eventsourcing.store" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_EVENT_STORE_FILE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Aggregate logging -->
+    <logger name="com.firefly.common.eventsourcing.aggregate" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_AGGREGATE_FILE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Event Publisher logging -->
+    <logger name="com.firefly.common.eventsourcing.publisher" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_PUBLISHER_FILE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Transaction logging -->
+    <logger name="com.firefly.common.eventsourcing.transaction" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Snapshot logging -->
+    <logger name="com.firefly.common.eventsourcing.snapshot" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_SNAPSHOT_FILE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Projection logging -->
+    <logger name="com.firefly.common.eventsourcing.projection" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- Event Outbox logging -->
+    <logger name="com.firefly.common.eventsourcing.outbox" level="INFO" additivity="false">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_OUTBOX_FILE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </logger>
+
+    <!-- R2DBC query logging (set to DEBUG to see SQL queries) -->
+    <logger name="io.r2dbc.postgresql.QUERY" level="INFO"/>
+    <logger name="io.r2dbc.postgresql.PARAM" level="INFO"/>
+    
+    <!-- Spring Data R2DBC logging -->
+    <logger name="org.springframework.data.r2dbc" level="INFO"/>
+    
+    <!-- Connection pool logging -->
+    <logger name="io.r2dbc.pool" level="INFO"/>
+
+    <!-- Root logger -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+
+    <!-- Profile-specific configurations -->
+    <springProfile name="dev,local">
+        <logger name="com.firefly.common.eventsourcing" level="DEBUG"/>
+        <logger name="io.r2dbc.postgresql.QUERY" level="DEBUG"/>
+        <!-- Use pretty console output for local development -->
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_PRETTY"/>
+            <appender-ref ref="ASYNC_FILE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="test">
+        <logger name="com.firefly.common.eventsourcing" level="DEBUG"/>
+        <root level="WARN">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod,production">
+        <logger name="com.firefly.common.eventsourcing" level="INFO"/>
+        <!-- Production uses JSON logging only -->
+        <root level="WARN">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_FILE"/>
+        </root>
+    </springProfile>
+</configuration>
+
