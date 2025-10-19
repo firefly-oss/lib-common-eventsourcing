@@ -1,149 +1,421 @@
-# Firefly Event Sourcing Library 🚀
+# Firefly Event Sourcing Library
 
-A **production-ready** Spring Boot library for implementing Event Sourcing with reactive programming, designed specifically for high-scale financial applications.
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-17+-orange.svg)]()
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2+-green.svg)]()
 
-> **What is Event Sourcing?** Instead of storing just the current state of your data, Event Sourcing stores all the events that led to that state. Think of it like a bank statement - you see every transaction, not just the final balance.
+A **production-ready** Spring Boot library for implementing Event Sourcing with reactive programming, designed for high-scale financial and enterprise applications.
 
-## Why Event Sourcing? 💡
+---
 
-**Traditional Approach:**
-```sql
-UPDATE accounts SET balance = 900 WHERE id = 'acc-123';
--- ❌ Lost: How? When? Who? Why?
+## 📖 Table of Contents
+
+- [What is Event Sourcing?](#what-is-event-sourcing)
+- [Why Use This Library?](#why-use-this-library)
+- [Quick Start](#quick-start)
+- [Core Concepts](#core-concepts)
+- [Complete Example: Account Ledger](#complete-example-account-ledger)
+- [Architecture](#architecture)
+- [Configuration](#configuration)
+- [Testing](#testing)
+- [Documentation](#documentation)
+- [License](#license)
+
+---
+
+## What is Event Sourcing?
+
+### The Core Idea (Explained Simply)
+
+Imagine you're tracking your bank account. There are two ways to do this:
+
+**📝 Traditional Way (CRUD):**
+You have a notebook with just one line: "Current Balance: $900"
+
+**Problem:** If someone asks "How did you get $900?", you can't answer. The history is lost.
+
+**📚 Event Sourcing Way:**
+You have a ledger with every transaction:
+```
+Jan 15, 10:00 AM - Opened account with $1,000
+Jan 15, 2:30 PM  - Withdrew $100 at ATM Main St
+Current Balance: $900 (calculated from events)
 ```
 
-**Event Sourcing Approach:**
+**Benefit:** You can answer ANY question about your account's history!
+
+### Technical Comparison
+
+<table>
+<tr>
+<th>Traditional CRUD</th>
+<th>Event Sourcing</th>
+</tr>
+<tr>
+<td>
+
+**What you store:**
+```sql
+-- Just current state
+UPDATE accounts
+SET balance = 900
+WHERE id = 'acc-123';
+```
+
+**❌ Lost Information:**
+- How did it change?
+- When did it change?
+- Who made the change?
+- Why was it changed?
+
+**What you can answer:**
+- "What is the current balance?" ✅
+
+**What you CANNOT answer:**
+- "What was the balance yesterday?" ❌
+- "Who withdrew money last week?" ❌
+- "How many deposits this month?" ❌
+
+</td>
+<td>
+
+**What you store:**
 ```json
 [
-  {"type": "AccountCreated", "balance": 1000, "timestamp": "2023-01-15T10:00:00Z"},
-  {"type": "MoneyWithdrawn", "amount": 100, "atm": "Main St", "timestamp": "2023-01-15T14:30:00Z"}
+  {
+    "type": "account.opened",
+    "balance": 1000,
+    "timestamp": "2025-01-15T10:00:00Z",
+    "userId": "user-123"
+  },
+  {
+    "type": "money.withdrawn",
+    "amount": 100,
+    "source": "ATM Main St",
+    "timestamp": "2025-01-15T14:30:00Z",
+    "userId": "user-123"
+  }
 ]
-// ✅ Complete audit trail + current state (calculated from events)
 ```
 
-**Perfect for Banking & Finance:**
-- 📋 **Complete audit trail** for regulatory compliance
-- 🔍 **Fraud detection** through transaction pattern analysis  
-- ⏰ **Time travel** - recreate any state at any point in time
-- 📊 **Rich analytics** - answer complex business questions
-- 🔄 **Event replay** for testing new business rules
+**✅ Complete Information:**
+- Full transaction history
+- Who, what, when, where, why
+- Time travel capabilities
+- Regulatory compliance ready
 
-## 🎯 **Getting Started**
+**What you can answer:**
+- "What is the current balance?" ✅
+- "What was the balance yesterday?" ✅
+- "Who withdrew money last week?" ✅
+- "How many deposits this month?" ✅
+- "Show me all ATM withdrawals" ✅
 
-### ⚠️ **Is Event Sourcing Right for You?**
+</td>
+</tr>
+</table>
 
-**Use Event Sourcing when you need:**
-- ✅ Complete audit trail (banking, healthcare, legal)
-- ✅ Time-travel queries (regulatory compliance)
-- ✅ Event-driven architecture
-- ✅ Complex domain with rich business logic
-- ✅ Fraud detection and pattern analysis
-- ✅ Debugging production issues (replay events)
+### Real-World Analogy
 
-**Consider Traditional CRUD instead when:**
-- ❌ Simple CRUD operations
-- ❌ No audit trail requirements
-- ❌ Performance is critical (event replay has overhead)
-- ❌ Simple domain logic
+Think of Event Sourcing like **Git for your data**:
+
+- **Git** doesn't just store your current code - it stores every commit (event)
+- You can see the **full history** of changes
+- You can **time travel** to any previous state
+- You can **replay** changes to understand how you got to the current state
+- You can **branch** and experiment without losing history
+
+Event Sourcing does the same for your business data!
+
+### When to Use Event Sourcing (Decision Guide)
+
+Ask yourself these questions:
+
+#### ✅ Use Event Sourcing if you answer YES to any of these:
+
+1. **"Do I need to know WHAT happened, not just the current state?"**
+   - Example: Banking - "Show me all transactions for this account"
+   - Example: Healthcare - "What treatments did this patient receive?"
+
+2. **"Do I need to know WHEN something happened?"**
+   - Example: Legal - "What was the contract status on March 15th?"
+   - Example: Compliance - "Prove this change happened before the deadline"
+
+3. **"Do I need to know WHO made changes?"**
+   - Example: Audit - "Who approved this transaction?"
+   - Example: Security - "Who accessed this sensitive data?"
+
+4. **"Do I need to know WHY something changed?"**
+   - Example: Fraud detection - "Why was this account frozen?"
+   - Example: Debugging - "What caused this balance discrepancy?"
+
+5. **"Do I need to replay or undo changes?"**
+   - Example: Testing - "Replay production events in test environment"
+   - Example: Recovery - "Undo the last 10 transactions"
+
+#### ❌ Don't Use Event Sourcing if:
+
+1. **"I just need basic CRUD operations"**
+   - Example: Simple contact list, basic settings
+   - Better choice: Traditional database with timestamps
+
+2. **"I don't care about history"**
+   - Example: Current weather data, cache data
+   - Better choice: Key-value store or simple tables
+
+3. **"My team has no experience with event sourcing"**
+   - Risk: Steep learning curve, potential mistakes
+   - Better choice: Start with traditional approach, migrate later if needed
+
+4. **"I need simple, fast queries on current state only"**
+   - Example: "Show me all active users" (no history needed)
+   - Better choice: Traditional database with indexes
+
+### Real-World Use Cases
+
+**✅ Banking (Perfect Fit):**
+```
+Question: "What was the account balance on December 31st for tax purposes?"
+Event Sourcing: Replay all events up to Dec 31 → Exact balance ✅
+Traditional DB: "We only have current balance" ❌
+```
+
+**✅ E-commerce (Perfect Fit):**
+```
+Question: "This customer claims they never received a refund. Prove it."
+Event Sourcing: Show RefundProcessedEvent with timestamp, amount, method ✅
+Traditional DB: "Order status shows 'Refunded' but no details" ❌
+```
+
+**❌ Simple Blog (Not a Good Fit):**
+```
+Question: "Show me all published blog posts"
+Event Sourcing: Replay all PostCreated, PostPublished events → Overkill ❌
+Traditional DB: SELECT * FROM posts WHERE status='published' → Simple ✅
+```
 
 ---
 
-### New to Event Sourcing?
-Start with our **step-by-step tutorial** that builds a complete Account Ledger system:
+## Why Use This Library?
+
+### 🚀 Production-Ready Features
+
+- **✅ Complete Event Sourcing Framework** - Aggregates, events, snapshots, projections
+- **✅ Reactive & Non-Blocking** - Built on Project Reactor and R2DBC
+- **✅ PostgreSQL Optimized** - JSONB storage, efficient indexing
+- **✅ Spring Boot Auto-Configuration** - Zero-configuration setup
+- **✅ Transactional Outbox Pattern** - Reliable event publishing
+- **✅ Optimistic Locking** - Concurrency conflict detection
+- **✅ Snapshot Support** - Performance optimization for large event streams
+- **✅ Distributed Tracing** - OpenTelemetry integration
+- **✅ Circuit Breakers** - Resilience4j integration
+- **✅ Multi-Tenancy** - Built-in tenant isolation
+- **✅ Comprehensive Testing** - 108 tests, Testcontainers support
+
+### 📚 Learning Resources
+
+**New to Event Sourcing?**
 👉 **[Complete Tutorial: Building an Account Ledger](./docs/tutorial-account-ledger.md)**
 
-This tutorial covers:
-- ✅ All event sourcing concepts explained with real examples
-- ✅ Why each component is necessary (aggregates, events, snapshots, read models, projections)
-- ✅ Complete working code from start to finish
-- ✅ Best practices and common patterns
-- ✅ Advanced topics (concurrency, sagas, multi-tenancy)
-
-### Already Familiar with Event Sourcing?
-- **[Quick Start Guide](./docs/quick-start.md)** - Get up and running in 5 minutes
-- **[Event Sourcing Explained](./docs/event-sourcing-explained.md)** - Deep dive into concepts
-- **[API Reference](./docs/api-reference.md)** - Complete API documentation
-
-## ⚡ **What This Library Provides**
-
-Everything you need to build production-ready event-sourced applications:
-
-### 🏗️ **Core Framework**
-- **Domain-Driven Design** - Rich aggregates with clear business rules
-- **Event Store Abstraction** - Clean interfaces for different storage backends
-- **Aggregate Framework** - Base classes with automatic event handling
-- **Event Streaming** - Reactive event processing with backpressure
-
-### 🗄️ **PostgreSQL-Optimized Persistence**
-- **R2DBC Integration** - Non-blocking database operations
-- **JSONB Storage** - Efficient JSON querying and indexing
-- **Database Migrations** - Flyway scripts for schema management
-- **Connection Pooling** - Production-ready connection management
-
-### 📊 **Production Features**
-- **Monitoring & Metrics** - Built-in Micrometer integration
-- **Health Checks** - Comprehensive system health indicators
-- **Performance Optimization** - Snapshots, batching, and caching
-- **Distributed Tracing** - Automatic request tracing
-
-### 🧪 **Testing & Development**
-- **Testcontainers Integration** - Real PostgreSQL testing
-- **H2 Support** - Fast in-memory testing
-- **Comprehensive Documentation** - From concepts to production
-- **Spring Boot Auto-Configuration** - Zero-configuration setup
-
-## Understanding the Architecture: Account Ledger Example
-
-This library uses a **complete Account Ledger** as the reference implementation. Let's understand why each component is necessary:
-
-### 🗄️ **Critical: What Gets a Database Table?**
-
-**The Golden Rule of Event Sourcing:**
-
-| Component | Has Table? | Why? |
-|-----------|------------|------|
-| **Events** | ✅ YES (`events` table) | Source of truth, immutable history |
-| **Snapshots** | ✅ YES (`snapshots` table) | Performance optimization |
-| **Read Models** | ✅ YES (`account_ledger_read_model`) | Fast queries (traditional table!) |
-| **Aggregates** | ❌ **NO TABLE** | Reconstructed from events in-memory |
-
-```java
-// ❌ WRONG: Do NOT create a table for aggregates
-@Table("account_ledger")  // ← This defeats event sourcing!
-public class AccountLedger extends AggregateRoot { }
-
-// ✅ CORRECT: Aggregates have no @Table annotation
-public class AccountLedger extends AggregateRoot {
-    // Lives in memory only!
-    // Reconstructed from events when needed
-}
-
-// ✅ CORRECT: Read models DO have tables
-@Table("account_ledger_read_model")  // ← For fast queries
-public class AccountLedgerReadModel { }
-```
-
-**Why This Matters:**
-- If you create a table for your aggregate, you're doing **traditional CRUD**, not event sourcing
-- The aggregate's state is **derived from events**, not stored directly
-- Read models are **projections** built from events for query performance
+**Already Familiar?**
+- [Event Sourcing Explained](./docs/event-sourcing-explained.md) - Deep dive into concepts
+- [Architecture Overview](./docs/architecture.md) - System design
+- [API Reference](./docs/api-reference.md) - Complete API documentation
 
 ---
 
-### The Components
+## Quick Start
+
+### 1. Add Dependency
+
+```xml
+<dependency>
+    <groupId>com.firefly</groupId>
+    <artifactId>lib-common-eventsourcing</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+</dependency>
+```
+
+### 2. Configure Database
+
+```yaml
+spring:
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/eventstore
+    username: postgres
+    password: postgres
+
+firefly:
+  eventsourcing:
+    enabled: true
+    snapshot:
+      enabled: true
+      threshold: 50  # Create snapshot every 50 events
+```
+
+### 3. Create Your First Event-Sourced Application
+
+See the [Complete Example: Account Ledger](#complete-example-account-ledger) section below for a full working example.
+
+---
+
+## Core Concepts (Learning Path)
+
+### 🎓 Understanding the Building Blocks
+
+Event Sourcing has 4 main components. Let's understand each one step by step:
+
+#### 1️⃣ Events - "What Happened"
+
+**Simple Explanation:**
+Events are like entries in a diary - they record facts about what happened.
+
+**Example:**
+```
+"On January 15th at 2:30 PM, John withdrew $100 from ATM on Main Street"
+```
+
+This becomes:
+```java
+MoneyWithdrawnEvent {
+    amount: $100,
+    who: "John",
+    when: "2025-01-15T14:30:00Z",
+    where: "ATM Main Street"
+}
+```
+
+**Key Rules:**
+- ✅ **Past tense** - "MoneyWithdrawn" not "WithdrawMoney" (it already happened!)
+- ✅ **Immutable** - Once written, never changed (like history)
+- ✅ **Complete** - Contains all information needed
+
+#### 2️⃣ Aggregates - "Business Rules Enforcer"
+
+**Simple Explanation:**
+Aggregates are like a security guard - they check if an action is allowed before letting it happen.
+
+**Example:**
+```java
+// Someone tries to withdraw $1000
+account.withdraw($1000);
+
+// Aggregate checks:
+// ❌ Is account frozen? → Reject
+// ❌ Is balance sufficient? → Reject
+// ✅ All good? → Generate "MoneyWithdrawnEvent"
+```
+
+**Key Rules:**
+- ✅ **No database table** - Lives in memory only!
+- ✅ **Validates commands** - Enforces business rules
+- ✅ **Generates events** - Records what happened
+- ✅ **Rebuilds from events** - Replays history to get current state
+
+**Why no table?**
+```
+Traditional: Account table stores current balance
+Event Sourcing: Events table stores all transactions
+              → Aggregate calculates balance from events
+```
+
+#### 3️⃣ Read Models - "Fast Query View"
+
+**Simple Explanation:**
+Read Models are like a summary page - they show current state for fast lookups.
+
+**Example:**
+```
+Events table (source of truth):
+  - AccountOpened: $1000
+  - MoneyDeposited: $500
+  - MoneyWithdrawn: $200
+
+Read Model table (for fast queries):
+  - Account ID: acc-123
+  - Current Balance: $1300
+  - Last Transaction: 2025-01-15
+```
+
+**Key Rules:**
+- ✅ **Has database table** - Traditional table for queries
+- ✅ **Denormalized** - Optimized for reading, not writing
+- ✅ **Eventually consistent** - Updated by projections
+- ✅ **Disposable** - Can be rebuilt from events
+
+#### 4️⃣ Projections - "Event Listener"
+
+**Simple Explanation:**
+Projections listen to events and update read models - like a secretary updating a summary.
+
+**Example:**
+```
+Event happens: MoneyDepositedEvent($500)
+                      ↓
+Projection listens: "Oh, money was deposited!"
+                      ↓
+Updates read model: balance = balance + $500
+```
+
+### 🗄️ The Golden Rule: What Gets a Database Table?
+
+**This is the most important concept to understand!**
+
+| Component | Has Table? | Why? | Analogy |
+|-----------|------------|------|---------|
+| **Events** | ✅ YES | Source of truth - permanent record | Bank statement (every transaction) |
+| **Snapshots** | ✅ YES | Performance - cached state | Bookmark in a book |
+| **Read Models** | ✅ YES | Fast queries - current state | Summary page |
+| **Aggregates** | ❌ **NO** | Business logic - temporary | Calculator (does math, doesn't store) |
+
+**Common Mistake:**
+```java
+// ❌ WRONG: Creating a table for the aggregate
+@Table("account_ledger")  // ← This defeats event sourcing!
+public class AccountLedger extends AggregateRoot {
+    private BigDecimal balance;  // Stored in table? NO!
+}
+
+// ✅ CORRECT: Aggregate has NO table
+public class AccountLedger extends AggregateRoot {
+    private BigDecimal balance;  // Calculated from events!
+    // This lives in memory only
+    // Rebuilt from events each time
+}
+
+// ✅ CORRECT: Read model HAS a table
+@Table("account_ledger_read_model")  // ← For fast queries
+public class AccountLedgerReadModel {
+    private BigDecimal balance;  // Stored in table for fast access
+}
+```
+
+**Why this matters:**
+```
+If you create a table for your aggregate, you're doing traditional CRUD, not event sourcing!
+
+Event Sourcing:
+  Events table → Aggregate (in memory) → Read Model table
+
+Traditional CRUD:
+  Account table ← Direct updates
+```
+
+### Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    WRITE SIDE (Commands)                         │
-│                                                                  │
-│  Client Request                                                  │
-│       ↓                                                          │
+│                    WRITE SIDE (Commands)                        │
+│                                                                 │
+│  Client Request                                                 │
+│       ↓                                                         │
 │  AccountLedgerService (orchestration)                           │
-│       ↓                                                          │
+│       ↓                                                         │
 │  AccountLedger Aggregate (business rules)                       │
-│       ↓                                                          │
+│       ↓                                                         │
 │  Events (MoneyDepositedEvent, etc.)                             │
-│       ↓                                                          │
+│       ↓                                                         │
 │  EventStore (PostgreSQL events table)                           │
 └────────────────────────────┬────────────────────────────────────┘
                              │
@@ -151,14 +423,14 @@ public class AccountLedgerReadModel { }
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    READ SIDE (Queries)                           │
-│                                                                  │
+│                    READ SIDE (Queries)                          │
+│                                                                 │
 │  AccountLedgerProjectionService (event listener)                │
-│       ↓                                                          │
+│       ↓                                                         │
 │  AccountLedgerReadModel (denormalized view)                     │
-│       ↓                                                          │
+│       ↓                                                         │
 │  AccountLedgerRepository (queries)                              │
-│       ↓                                                          │
+│       ↓                                                         │
 │  Fast Query Results                                             │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -265,250 +537,498 @@ getBalanceAt("2025-10-17T15:30:00Z")  -- What was the balance yesterday at 3:30 
 
 ---
 
-## Quick Start
+---
 
-### 1. Add Dependency
+## Complete Example: Account Ledger
 
-```xml
-<dependency>
-    <groupId>com.firefly</groupId>
-    <artifactId>lib-common-eventsourcing</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
-</dependency>
+### 📚 Learning Approach
+
+We'll build a **complete banking account system** step by step. Each step builds on the previous one.
+
+**What we're building:**
+A bank account that can:
+- ✅ Open new accounts with initial deposit
+- ✅ Deposit money
+- ✅ Withdraw money (with overdraft protection)
+- ✅ Track complete transaction history
+- ✅ Query current balance instantly
+- ✅ Time travel to see balance at any point in time
+
+**The Journey:**
+```
+Step 1: Define Events (What can happen?)
+   ↓
+Step 2: Create Aggregate (What are the rules?)
+   ↓
+Step 3: Build Service (How do we orchestrate?)
+   ↓
+Step 4: Add Read Model (How do we query fast?)
+   ↓
+Step 5: Create Projection (How do we stay in sync?)
+   ↓
+Step 6: Use It! (Put it all together)
 ```
 
-### 2. Configuration
+---
 
-```yaml
-firefly:
-  eventsourcing:
-    enabled: true
-    store:
-      type: r2dbc
-      batch-size: 100
-    snapshot:
-      enabled: true
-      threshold: 50
-    publisher:
-      enabled: true
-      type: KAFKA
-      destination-prefix: events
-```
+### Step 1: Define Domain Events
 
-### 3. Create Domain Events (Account Ledger Example)
+**🎯 Goal:** Define what can happen to a bank account.
+
+**💡 Think of events as:**
+- Entries in a ledger
+- Facts that cannot be changed
+- Answers to "What happened?"
+
+**📝 Events we need:**
+1. **AccountOpened** - A new account was created
+2. **MoneyDeposited** - Money was added to the account
+3. **MoneyWithdrawn** - Money was taken from the account
+
+**🔑 Key Principles:**
+- Use **past tense** (AccountOpened, not OpenAccount)
+- Include **all relevant data** (who, what, when, where, why)
+- Extend **AbstractDomainEvent** (provides common fields)
+- Use **@DomainEvent** annotation (for type identification)
 
 ```java
-// Event 1: Account opened
-@DomainEvent("account.opened")
-@SuperBuilder
-@Getter
-@NoArgsConstructor
-@AllArgsConstructor
+// Event 1: Account was opened
+@DomainEvent("account.opened")  // ← Unique identifier for this event type
+@SuperBuilder                    // ← Lombok: generates builder pattern
+@Getter                          // ← Lombok: generates getters
+@NoArgsConstructor              // ← Required for deserialization
+@AllArgsConstructor             // ← Required for builder
 public class AccountOpenedEvent extends AbstractDomainEvent {
-    private String accountNumber;
-    private String accountType;
-    private UUID customerId;
-    private BigDecimal initialDeposit;
-    private String currency;
+    private String accountNumber;      // e.g., "ACC-2025-001"
+    private String accountType;        // e.g., "CHECKING", "SAVINGS"
+    private UUID customerId;           // Who owns this account
+    private BigDecimal initialDeposit; // Starting balance
+    private String currency;           // e.g., "USD", "EUR"
 }
 
-// Event 2: Money deposited
+// Event 2: Money was deposited
 @DomainEvent("money.deposited")
 @SuperBuilder
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
 public class MoneyDepositedEvent extends AbstractDomainEvent {
-    private BigDecimal amount;
-    private String source;        // "ATM", "Wire Transfer", etc.
-    private String reference;     // External reference number
-    private String depositedBy;   // User who made the deposit
+    private BigDecimal amount;         // How much was deposited
+    private String source;             // "Wire Transfer", "Cash Deposit", "Check"
+    private String reference;          // External reference number
+    private String depositedBy;        // User ID who made the deposit
 }
 
-// Event 3: Money withdrawn
+// Event 3: Money was withdrawn
 @DomainEvent("money.withdrawn")
 @SuperBuilder
 @Getter
 @NoArgsConstructor
 @AllArgsConstructor
 public class MoneyWithdrawnEvent extends AbstractDomainEvent {
-    private BigDecimal amount;
-    private String destination;
-    private String reference;
-    private String withdrawnBy;
+    private BigDecimal amount;         // How much was withdrawn
+    private String destination;        // "ATM", "Wire Transfer", "Check"
+    private String reference;          // External reference number
+    private String withdrawnBy;        // User ID who made the withdrawal
 }
 ```
 
-### 4. Implement Aggregate Root (Business Logic)
+**💡 What you get from AbstractDomainEvent:**
+```java
+// These fields are automatically included in every event:
+- UUID aggregateId;        // Which account this event belongs to
+- Instant eventTimestamp;  // When this event happened
+- String userId;           // Who triggered this event
+- String correlationId;    // For tracing across services
+- Map<String, Object> metadata; // Additional context
+```
+
+**📊 How events are stored:**
+```json
+{
+  "eventId": "evt-123",
+  "eventType": "money.deposited",
+  "aggregateId": "acc-456",
+  "eventData": {
+    "amount": 500.00,
+    "source": "Wire Transfer",
+    "reference": "REF-789",
+    "depositedBy": "user-123"
+  },
+  "timestamp": "2025-01-15T14:30:00Z",
+  "metadata": {
+    "userId": "user-123",
+    "correlationId": "corr-abc"
+  }
+}
+```
+
+---
+
+### Step 2: Implement Aggregate Root
+
+**🎯 Goal:** Create the "brain" that enforces business rules and generates events.
+
+**💡 Think of the aggregate as:**
+- A security guard checking if actions are allowed
+- A state machine that transitions based on events
+- A calculator that derives current state from history
+
+**🔑 Key Responsibilities:**
+1. **Validate commands** - "Can this action happen?"
+2. **Generate events** - "Record what happened"
+3. **Apply events** - "Update internal state"
+4. **Protect invariants** - "Never allow invalid state"
+
+**⚠️ Critical Rule:**
+The aggregate has **NO database table**. It lives in memory and is rebuilt from events each time.
+
+**🔄 The Flow:**
+```
+Command (deposit $100)
+   ↓
+Aggregate validates (is account open? is amount positive?)
+   ↓
+Generate event (MoneyDepositedEvent)
+   ↓
+Apply event (balance = balance + $100)
+   ↓
+Event saved to database
+```
 
 ```java
+@Getter
 public class AccountLedger extends AggregateRoot {
+
+    // ⚠️ IMPORTANT: These fields are NOT stored in a database table!
+    // They are calculated from events each time the aggregate is loaded
     private String accountNumber;
-    private BigDecimal balance;
+    private String accountType;
+    private UUID customerId;
+    private BigDecimal balance;        // ← Calculated from all deposit/withdrawal events
+    private String currency;
     private boolean frozen;
     private boolean closed;
 
-    // Constructor for creating NEW accounts
+    // Constructor 1: For LOADING existing accounts from event history
+    // Used when: Fetching an existing account to perform operations
+    public AccountLedger(UUID id) {
+        super(id, "AccountLedger");
+        this.balance = BigDecimal.ZERO;
+        // After this, loadFromHistory() will be called to replay events
+    }
+
+    // Constructor 2: For CREATING new accounts
+    // Used when: Opening a brand new account
     public AccountLedger(UUID id, String accountNumber, String accountType,
-                         UUID customerId, BigDecimal initialDeposit, String currency) {
+                        UUID customerId, BigDecimal initialDeposit, String currency) {
         super(id, "AccountLedger");
 
-        // Validate
+        // Step 1: Validate business rules (guard clauses)
         if (initialDeposit.compareTo(BigDecimal.ZERO) < 0) {
             throw new IllegalArgumentException("Initial deposit cannot be negative");
         }
 
-        // Generate event
+        // Step 2: Generate event (record what happened)
         applyChange(AccountOpenedEvent.builder()
-            .aggregateId(id)
-            .accountNumber(accountNumber)
-            .accountType(accountType)
-            .customerId(customerId)
-            .initialDeposit(initialDeposit)
-            .currency(currency)
-            .build());
+                .aggregateId(id)
+                .accountNumber(accountNumber)
+                .accountType(accountType)
+                .customerId(customerId)
+                .initialDeposit(initialDeposit)
+                .currency(currency)
+                .build());
+        // Note: applyChange() will call on(AccountOpenedEvent) to update state
     }
 
-    // Constructor for LOADING from events
-    public AccountLedger(UUID id) {
-        super(id, "AccountLedger");
-    }
+    // ═══════════════════════════════════════════════════════════════
+    // COMMANDS: Public methods that validate and generate events
+    // ═══════════════════════════════════════════════════════════════
 
-    // Command: Deposit money
+    // Command: Deposit money into the account
     public void deposit(BigDecimal amount, String source, String reference, String depositedBy) {
-        if (closed) throw new AccountClosedException("Cannot deposit to closed account");
-        if (frozen) throw new AccountFrozenException("Cannot deposit to frozen account");
+        // Step 1: Validate business rules
+        if (closed) {
+            throw new AccountClosedException("Cannot deposit to closed account");
+        }
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Deposit amount must be positive");
+            throw new InvalidAmountException("Deposit amount must be positive");
         }
 
+        // Step 2: Generate event (if validation passes)
         applyChange(MoneyDepositedEvent.builder()
-            .aggregateId(id)
-            .amount(amount)
-            .source(source)
-            .reference(reference)
-            .depositedBy(depositedBy)
-            .build());
+                .aggregateId(getId())
+                .amount(amount)
+                .source(source)
+                .reference(reference)
+                .depositedBy(depositedBy)
+                .build());
+        // Note: applyChange() will call on(MoneyDepositedEvent) to update balance
     }
 
-    // Command: Withdraw money
+    // Command: Withdraw money from the account
     public void withdraw(BigDecimal amount, String destination, String reference, String withdrawnBy) {
-        if (closed) throw new AccountClosedException("Cannot withdraw from closed account");
-        if (frozen) throw new AccountFrozenException("Cannot withdraw from frozen account");
+        // Step 1: Validate business rules
+        if (closed) {
+            throw new AccountClosedException("Cannot withdraw from closed account");
+        }
+        if (frozen) {
+            throw new AccountFrozenException("Cannot withdraw from frozen account");
+        }
         if (balance.compareTo(amount) < 0) {
+            // ← This is the overdraft protection!
             throw new InsufficientFundsException("Insufficient funds");
         }
 
+        // Step 2: Generate event (if validation passes)
         applyChange(MoneyWithdrawnEvent.builder()
-            .aggregateId(id)
-            .amount(amount)
-            .destination(destination)
-            .reference(reference)
-            .withdrawnBy(withdrawnBy)
-            .build());
+                .aggregateId(getId())
+                .amount(amount)
+                .destination(destination)
+                .reference(reference)
+                .withdrawnBy(withdrawnBy)
+                .build());
+        // Note: applyChange() will call on(MoneyWithdrawnEvent) to update balance
     }
 
-    // Event Handler: Apply AccountOpenedEvent
-    @EventHandler
-    public void apply(AccountOpenedEvent event) {
+    // ═══════════════════════════════════════════════════════════════
+    // EVENT HANDLERS: Private methods that update state
+    // These are called automatically when events are applied
+    // ═══════════════════════════════════════════════════════════════
+
+    // Event handler: What to do when AccountOpenedEvent happens
+    private void on(AccountOpenedEvent event) {
+        // Simply update the internal state - no validation needed
+        // (validation already happened in the constructor)
         this.accountNumber = event.getAccountNumber();
-        this.balance = event.getInitialDeposit();
+        this.accountType = event.getAccountType();
+        this.customerId = event.getCustomerId();
+        this.balance = event.getInitialDeposit();  // ← Starting balance
+        this.currency = event.getCurrency();
         this.frozen = false;
         this.closed = false;
     }
 
-    // Event Handler: Apply MoneyDepositedEvent
-    @EventHandler
-    public void apply(MoneyDepositedEvent event) {
-        this.balance = this.balance.add(event.getAmount());
+    // Event handler: What to do when MoneyDepositedEvent happens
+    private void on(MoneyDepositedEvent event) {
+        // Add the deposited amount to the balance
+        this.balance = this.balance.add(event.getAmount());  // ← Balance increases
     }
 
-    // Event Handler: Apply MoneyWithdrawnEvent
-    @EventHandler
-    public void apply(MoneyWithdrawnEvent event) {
-        this.balance = this.balance.subtract(event.getAmount());
+    // Event handler: What to do when MoneyWithdrawnEvent happens
+    private void on(MoneyWithdrawnEvent event) {
+        // Subtract the withdrawn amount from the balance
+        this.balance = this.balance.subtract(event.getAmount());  // ← Balance decreases
     }
 }
 ```
 
-### 5. Create Service Layer with @EventSourcingTransactional
+**💡 Understanding the Flow:**
+
+**Creating a new account:**
+```
+1. new AccountLedger(id, "ACC-001", "CHECKING", customerId, $1000, "USD")
+2. Constructor validates: initialDeposit >= 0 ✅
+3. Constructor calls: applyChange(AccountOpenedEvent)
+4. applyChange() calls: on(AccountOpenedEvent)
+5. on() sets: balance = $1000
+6. Event is added to uncommitted events list
+7. Service saves events to database
+```
+
+**Depositing money:**
+```
+1. account.deposit($500, "Wire", "REF-123", "user-456")
+2. deposit() validates: not closed ✅, amount > 0 ✅
+3. deposit() calls: applyChange(MoneyDepositedEvent)
+4. applyChange() calls: on(MoneyDepositedEvent)
+5. on() updates: balance = $1000 + $500 = $1500
+6. Event is added to uncommitted events list
+7. Service saves events to database
+```
+
+**Loading an existing account:**
+```
+1. new AccountLedger(id)  // Empty aggregate
+2. loadFromHistory([AccountOpenedEvent, MoneyDepositedEvent, MoneyWithdrawnEvent])
+3. For each event:
+   - on(AccountOpenedEvent) → balance = $1000
+   - on(MoneyDepositedEvent) → balance = $1500
+   - on(MoneyWithdrawnEvent) → balance = $1300
+4. Final state: balance = $1300 (calculated from events!)
+```
+
+**🎯 Key Takeaway:**
+The aggregate's state is **always derived from events**. There's no separate table storing the balance. The balance is calculated by replaying all events!
+
+---
+
+### Step 3: Create Service Layer
+
+**🎯 Goal:** Orchestrate the complete flow from loading aggregates to saving events.
+
+**💡 Think of the service as:**
+- The conductor of an orchestra - coordinates all the pieces
+- The glue between your API and your domain logic
+- The transaction boundary - ensures all-or-nothing persistence
+
+**🔑 Key Responsibilities:**
+1. **Load aggregates** from event store (with snapshot optimization)
+2. **Execute commands** on aggregates (business logic)
+3. **Save events** atomically (all or nothing)
+4. **Publish events** to message brokers (for other services)
+5. **Handle concurrency** conflicts (retry logic)
+
+**✨ The Magic Annotation:**
+`@EventSourcingTransactional` does all the heavy lifting:
+- Saves uncommitted events to the database
+- Publishes events to Kafka/RabbitMQ
+- Handles optimistic locking conflicts
+- Ensures atomic operations (all succeed or all fail)
 
 ```java
 @Service
+@RequiredArgsConstructor
 public class AccountLedgerService {
+
     private final EventStore eventStore;
     private final SnapshotStore snapshotStore;
 
     // Open new account
     @EventSourcingTransactional
     public Mono<AccountLedger> openAccount(String accountNumber, String accountType,
-                                           UUID customerId, BigDecimal initialDeposit,
-                                           String currency) {
-        return Mono.fromCallable(() -> {
-            UUID accountId = UUID.randomUUID();
-            return new AccountLedger(accountId, accountNumber, accountType,
-                                     customerId, initialDeposit, currency);
-        });
-        // ✅ Events automatically saved and published!
+                                          UUID customerId, BigDecimal initialDeposit,
+                                          String currency) {
+        UUID accountId = UUID.randomUUID();
+
+        return Mono.fromCallable(() -> new AccountLedger(
+                    accountId, accountNumber, accountType, customerId, initialDeposit, currency
+                ))
+                .flatMap(account -> eventStore.appendEvents(
+                        accountId,
+                        "AccountLedger",
+                        account.getUncommittedEvents(),
+                        0L
+                    )
+                    .doOnSuccess(stream -> account.markEventsAsCommitted())
+                    .thenReturn(account)
+                );
     }
 
     // Deposit money
-    @EventSourcingTransactional
+    @EventSourcingTransactional(retryOnConcurrencyConflict = true, maxRetries = 3)
     public Mono<AccountLedger> deposit(UUID accountId, BigDecimal amount,
-                                       String source, String reference, String depositedBy) {
-        return loadAggregate(accountId)
-            .map(ledger -> {
-                ledger.deposit(amount, source, reference, depositedBy);
-                return ledger;
-            });
-        // ✅ Events automatically saved and published!
+                                      String description, String reference, String userId) {
+        return loadAccount(accountId)
+                .doOnNext(account -> account.deposit(amount, description, reference, userId))
+                .flatMap(this::saveAccount);
+    }
+
+    // Withdraw money
+    @EventSourcingTransactional(retryOnConcurrencyConflict = true, maxRetries = 3)
+    public Mono<AccountLedger> withdraw(UUID accountId, BigDecimal amount,
+                                       String description, String reference, String userId) {
+        return loadAccount(accountId)
+                .doOnNext(account -> account.withdraw(amount, description, reference, userId))
+                .flatMap(this::saveAccount);
     }
 
     // Load aggregate (with snapshot optimization)
-    private Mono<AccountLedger> loadAggregate(UUID accountId) {
-        return snapshotStore.loadLatestSnapshot(accountId, AccountLedgerSnapshot.class)
-            .flatMap(snapshot -> {
-                AccountLedger ledger = AccountLedger.fromSnapshot(snapshot);
-                return eventStore.loadEvents(accountId, snapshot.getVersion() + 1, Long.MAX_VALUE)
-                    .collectList()
-                    .map(events -> {
-                        if (!events.isEmpty()) ledger.loadFromHistory(events);
-                        return ledger;
-                    });
-            })
-            .switchIfEmpty(
-                eventStore.loadEvents(accountId)
-                    .collectList()
-                    .map(events -> {
-                        AccountLedger ledger = new AccountLedger(accountId);
-                        ledger.loadFromHistory(events);
-                        return ledger;
-                    })
-            );
+    private Mono<AccountLedger> loadAccount(UUID accountId) {
+        return snapshotStore.loadLatestSnapshot(accountId, "AccountLedger")
+                .cast(AccountLedgerSnapshot.class)
+                .flatMap(snapshot -> loadAccountFromSnapshot(accountId, snapshot))
+                .switchIfEmpty(loadAccountFromEvents(accountId));
+    }
+
+    private Mono<AccountLedger> loadAccountFromSnapshot(UUID accountId, AccountLedgerSnapshot snapshot) {
+        return eventStore.loadEventStream(accountId, "AccountLedger", snapshot.getVersion())
+                .map(stream -> {
+                    AccountLedger account = AccountLedger.fromSnapshot(snapshot);
+                    account.loadFromHistory(stream.getEvents());
+                    return account;
+                });
+    }
+
+    private Mono<AccountLedger> loadAccountFromEvents(UUID accountId) {
+        return eventStore.loadEventStream(accountId, "AccountLedger")
+                .map(stream -> {
+                    AccountLedger account = new AccountLedger(accountId);
+                    account.loadFromHistory(stream.getEvents());
+                    return account;
+                });
+    }
+
+    private Mono<AccountLedger> saveAccount(AccountLedger account) {
+        return eventStore.appendEvents(
+                    account.getId(),
+                    "AccountLedger",
+                    account.getUncommittedEvents(),
+                    account.getCurrentVersion() - account.getUncommittedEventCount()
+                )
+                .doOnSuccess(stream -> account.markEventsAsCommitted())
+                .thenReturn(account);
     }
 }
 ```
 
-### 6. Create Read Model for Fast Queries
+### Step 4: Create Read Model for Fast Queries
+
+**🎯 Goal:** Create a fast, queryable view of the current state.
+
+**💡 The Problem:**
+```
+User asks: "Show me all accounts with balance > $10,000"
+
+Without Read Model:
+1. Load ALL accounts from event store
+2. Replay ALL events for EACH account
+3. Calculate balance for EACH account
+4. Filter accounts with balance > $10,000
+⏱️ Time: Could take minutes for thousands of accounts!
+
+With Read Model:
+1. SELECT * FROM account_ledger_read_model WHERE balance > 10000
+⏱️ Time: Milliseconds!
+```
+
+**🔑 Key Principles:**
+- ✅ **Has a database table** (unlike aggregates!)
+- ✅ **Denormalized** - Optimized for reading, not writing
+- ✅ **Eventually consistent** - Updated by projections (slight delay is OK)
+- ✅ **Disposable** - Can be deleted and rebuilt from events
+- ✅ **Query-optimized** - Indexes, joins, whatever you need
+
+**📊 Comparison:**
+
+| Aspect | Aggregate | Read Model |
+|--------|-----------|------------|
+| **Has Table?** | ❌ No | ✅ Yes |
+| **Purpose** | Business logic | Fast queries |
+| **Consistency** | Strongly consistent | Eventually consistent |
+| **Optimized for** | Writing | Reading |
+| **Can be deleted?** | ❌ No (source of truth) | ✅ Yes (can rebuild) |
 
 ```java
-// Read Model Entity
 @Data
 @Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Table("account_ledger_read_model")
 public class AccountLedgerReadModel {
     @Id
     private UUID accountId;
     private String accountNumber;
+    private String accountType;
     private UUID customerId;
     private BigDecimal balance;
     private String currency;
     private boolean frozen;
     private boolean closed;
-    private String status;  // "ACTIVE", "FROZEN", "CLOSED"
+    private Instant openedAt;
+    private Instant lastTransactionAt;
 }
 
-// Repository for Fast Queries
 @Repository
 public interface AccountLedgerRepository extends R2dbcRepository<AccountLedgerReadModel, UUID> {
     Mono<AccountLedgerReadModel> findByAccountNumber(String accountNumber);
@@ -519,7 +1039,42 @@ public interface AccountLedgerRepository extends R2dbcRepository<AccountLedgerRe
 }
 ```
 
-### 7. Create Projection to Keep Read Model in Sync
+### Step 5: Create Projection to Keep Read Model in Sync
+
+**🎯 Goal:** Listen to events and update the read model automatically.
+
+**💡 Think of projections as:**
+- A secretary updating a summary document
+- A mirror reflecting changes from the event store
+- A background worker keeping views up-to-date
+
+**🔄 The Flow:**
+```
+1. User deposits $500
+2. Service saves MoneyDepositedEvent to events table
+3. Event is published to message broker
+4. Projection listens and receives the event
+5. Projection updates read model: balance = balance + $500
+6. Read model is now up-to-date!
+```
+
+**🔑 Key Principles:**
+- ✅ **Event-driven** - Reacts to events, doesn't poll
+- ✅ **Idempotent** - Can process same event multiple times safely
+- ✅ **Eventually consistent** - Small delay between write and read is OK
+- ✅ **Rebuildable** - Can delete read model and rebuild from all events
+
+**⏱️ Eventual Consistency Explained:**
+```
+Time: 10:00:00.000 - User deposits $500
+Time: 10:00:00.001 - Event saved to database
+Time: 10:00:00.002 - Event published to Kafka
+Time: 10:00:00.005 - Projection receives event
+Time: 10:00:00.006 - Read model updated
+
+Gap: 6 milliseconds of "eventual consistency"
+For most applications, this is perfectly acceptable!
+```
 
 ```java
 @Service
@@ -532,24 +1087,34 @@ public class AccountLedgerProjectionService extends ProjectionService<AccountLed
         Event event = envelope.getEvent();
 
         if (event instanceof AccountOpenedEvent e) {
-            // Create read model
             AccountLedgerReadModel readModel = AccountLedgerReadModel.builder()
                 .accountId(e.getAggregateId())
                 .accountNumber(e.getAccountNumber())
+                .accountType(e.getAccountType())
                 .customerId(e.getCustomerId())
                 .balance(e.getInitialDeposit())
                 .currency(e.getCurrency())
                 .frozen(false)
                 .closed(false)
-                .status("ACTIVE")
+                .openedAt(e.getEventTimestamp())
+                .lastTransactionAt(e.getEventTimestamp())
                 .build();
             return repository.save(readModel).then();
 
         } else if (event instanceof MoneyDepositedEvent e) {
-            // Update balance
             return repository.findById(e.getAggregateId())
                 .flatMap(readModel -> {
                     readModel.setBalance(readModel.getBalance().add(e.getAmount()));
+                    readModel.setLastTransactionAt(e.getEventTimestamp());
+                    return repository.save(readModel);
+                })
+                .then();
+
+        } else if (event instanceof MoneyWithdrawnEvent e) {
+            return repository.findById(e.getAggregateId())
+                .flatMap(readModel -> {
+                    readModel.setBalance(readModel.getBalance().subtract(e.getAmount()));
+                    readModel.setLastTransactionAt(e.getEventTimestamp());
                     return repository.save(readModel);
                 })
                 .then();
@@ -560,17 +1125,18 @@ public class AccountLedgerProjectionService extends ProjectionService<AccountLed
 }
 ```
 
-### 8. Use It!
+### Step 6: Use It in Your Application
 
 ```java
 @RestController
 @RequestMapping("/api/accounts")
+@RequiredArgsConstructor
 public class AccountController {
 
     private final AccountLedgerService service;
     private final AccountLedgerRepository repository;
 
-    // WRITE: Open account (uses aggregate)
+    // WRITE: Open account
     @PostMapping
     public Mono<AccountLedger> openAccount(@RequestBody OpenAccountRequest request) {
         return service.openAccount(
@@ -582,13 +1148,32 @@ public class AccountController {
         );
     }
 
-    // WRITE: Deposit money (uses aggregate)
+    // WRITE: Deposit money
     @PostMapping("/{accountId}/deposit")
-    public Mono<AccountLedger> deposit(@PathVariable UUID accountId,
-                                       @RequestBody DepositRequest request) {
-        return service.deposit(accountId, request.getAmount(),
-                              request.getSource(), request.getReference(),
-                              request.getDepositedBy());
+    public Mono<AccountLedger> deposit(
+            @PathVariable UUID accountId,
+            @RequestBody DepositRequest request) {
+        return service.deposit(
+            accountId,
+            request.getAmount(),
+            request.getDescription(),
+            request.getReference(),
+            request.getUserId()
+        );
+    }
+
+    // WRITE: Withdraw money
+    @PostMapping("/{accountId}/withdraw")
+    public Mono<AccountLedger> withdraw(
+            @PathVariable UUID accountId,
+            @RequestBody WithdrawRequest request) {
+        return service.withdraw(
+            accountId,
+            request.getAmount(),
+            request.getDescription(),
+            request.getReference(),
+            request.getUserId()
+        );
     }
 
     // READ: Get account (uses read model - FAST!)
@@ -605,486 +1190,427 @@ public class AccountController {
 
     // READ: High balance accounts (uses read model - FAST!)
     @GetMapping("/high-balance")
-    public Flux<AccountLedgerReadModel> getHighBalanceAccounts() {
-        return repository.findByBalanceGreaterThan(new BigDecimal("10000"));
+    public Flux<AccountLedgerReadModel> getHighBalanceAccounts(
+            @RequestParam(defaultValue = "10000") BigDecimal minBalance) {
+        return repository.findByBalanceGreaterThan(minBalance);
+    }
+
+    // TIME TRAVEL: Get account state at specific point in time
+    @GetMapping("/{accountId}/at/{timestamp}")
+    public Mono<AccountLedger> getAccountAtTime(
+            @PathVariable UUID accountId,
+            @PathVariable Instant timestamp) {
+        return service.getAccountAtTime(accountId, timestamp);
     }
 }
 ```
 
-**That's it!** You now have:
-- ✅ Complete audit trail (events in EventStore)
-- ✅ Business rules enforced (in AccountLedger aggregate)
-- ✅ Fast queries (AccountLedgerReadModel)
-- ✅ Automatic synchronization (AccountLedgerProjectionService)
-- ✅ ACID transactions (@EventSourcingTransactional)
-- ✅ Time travel capabilities (replay events to any point in time)
+### 🎉 What You Get
 
-👉 **[See the complete tutorial for detailed explanations](./docs/tutorial-account-ledger.md)**
+Congratulations! You now have a complete event-sourced banking system. Here's what you've built:
 
-## 🧩 Core Concepts
-
-Understand the building blocks of event sourcing:
-
-### 📋 **Events** - Facts About What Happened
-
-Events are **immutable records** of things that happened in your business domain.
-
-```java
-@JsonTypeName("money.withdrawn")
-public record MoneyWithdrawnEvent(
-    UUID aggregateId,           // Which account?
-    BigDecimal amount,          // How much?
-    String reason,              // Why?
-    String atmLocation,         // Where?
-    Instant timestamp           // When?
-) implements Event {
-    @Override
-    public String getEventType() { return "money.withdrawn"; }
-}
-```
-
-**Key Principles:**
-- 📅 **Past Tense Names** - `AccountCreated`, not `CreateAccount`
-- 🔒 **Immutable** - Once created, never changed
-- 📦 **Self-Contained** - All necessary data included
-- 🏷️ **Well-Typed** - Use `@JsonTypeName` for serialization
-
-**Real Banking Example:**
-```json
-{
-  "eventType": "money.withdrawn",
-  "aggregateId": "acc-12345",
-  "amount": 100.00,
-  "reason": "ATM Withdrawal",
-  "atmLocation": "Main Street Branch",
-  "timestamp": "2023-10-18T14:30:00Z",
-  "metadata": {
-    "userId": "user-789",
-    "deviceId": "atm-001",
-    "correlationId": "txn-456"
-  }
-}
-```
-
-### 🏗️ **Aggregates** - Business Logic + State
-
-Aggregates are **consistency boundaries** that encapsulate business rules and generate events.
-
-```java
-public class Account extends AggregateRoot {
-    // Current state (derived from events)
-    private BigDecimal balance;
-    private String accountNumber;
-    private AccountStatus status;
-    
-    // Business logic (validates and generates events)
-    public void withdraw(BigDecimal amount, String reason) {
-        // 1. Validate business rules
-        if (status != AccountStatus.ACTIVE) {
-            throw new AccountNotActiveException();
-        }
-        if (balance.compareTo(amount) < 0) {
-            throw new InsufficientFundsException();
-        }
-        if (amount.compareTo(BigDecimal.ZERO) <= 0) {
-            throw new InvalidAmountException();
-        }
-        
-        // 2. Generate event (what happened)
-        applyChange(new MoneyWithdrawnEvent(
-            getId(), amount, reason, 
-            determineLocation(), Instant.now()
-        ));
-    }
-    
-    // Event handler (how state changes)
-    private void on(MoneyWithdrawnEvent event) {
-        this.balance = this.balance.subtract(event.amount());
-        // State is derived from events!
-    }
-}
-```
-
-**Key Principles:**
-- 🛡️ **Consistency Boundary** - All business rules enforced
-- 🎯 **Single Responsibility** - One aggregate = one business concept
-- 📊 **State from Events** - Current state calculated from event history
-- 🔄 **Event Sourcing Pattern** - Command → Validation → Event → State Change
-
-### 🗄️ **Event Store** - The Source of Truth
-
-The Event Store is your **database for events** - it persists and retrieves the complete event history.
-
-```java
-@Service
-public class AccountService {
-    private final EventStore eventStore;
-    
-    public Mono<Account> handleWithdrawal(UUID accountId, BigDecimal amount) {
-        return eventStore
-            // 1. Load complete event history
-            .loadEventStream(accountId, "Account")
-            
-            // 2. Reconstruct current state from events
-            .map(stream -> {
-                Account account = new Account(accountId);
-                account.loadFromHistory(stream.getEvents()); // Replay all events
-                return account;
-            })
-            
-            // 3. Execute business logic
-            .doOnNext(account -> account.withdraw(amount, "ATM"))
-            
-            // 4. Persist new events
-            .flatMap(account -> eventStore.appendEvents(
-                accountId, "Account", 
-                account.getUncommittedEvents(), 
-                account.getVersion() // Optimistic locking
-            ))
-            .map(stream -> account);
-    }
-}
-```
-
-**Event Store Capabilities:**
-- 💾 **Atomic Persistence** - All events saved or none (ACID)
-- 🔒 **Optimistic Locking** - Prevents concurrent modification conflicts  
-- 📈 **Global Ordering** - Events have sequence numbers across all aggregates
-- 🔍 **Rich Querying** - Stream events by type, time range, aggregate
-- ⚡ **Reactive Streams** - Non-blocking operations with backpressure
-
-**Real Database Schema:**
+#### ✅ Complete Audit Trail
 ```sql
--- PostgreSQL with JSONB for performance
-CREATE TABLE events (
-    event_id UUID PRIMARY KEY,
-    aggregate_id UUID NOT NULL,
-    aggregate_version BIGINT NOT NULL,     -- For optimistic locking
-    global_sequence BIGSERIAL,             -- Global event ordering  
-    event_type VARCHAR(255) NOT NULL,      -- 'money.withdrawn'
-    event_data JSONB NOT NULL,             -- Full event as JSON
-    metadata JSONB,                        -- Correlation, user, etc.
-    created_at TIMESTAMP WITH TIME ZONE
-);
+-- Every transaction is recorded forever
+SELECT * FROM events WHERE aggregate_id = 'acc-123' ORDER BY aggregate_version;
+
+Result:
+1. AccountOpenedEvent - $1,000 initial deposit
+2. MoneyDepositedEvent - $500 wire transfer
+3. MoneyWithdrawnEvent - $200 ATM withdrawal
+Current balance: $1,300 (calculated from events)
 ```
 
-### 📸 **Snapshots** - Performance Optimization
-
-Snapshots are **saved states** that speed up aggregate loading when you have many events.
-
-**Creating Snapshots with AbstractSnapshot:**
-
+#### ✅ Business Rules Enforced
 ```java
-// 1. Define your snapshot by extending AbstractSnapshot
-@Getter
-public class AccountLedgerSnapshot extends AbstractSnapshot {
-    private final String accountNumber;
-    private final BigDecimal balance;
-    private final String currency;
+// Try to overdraw
+account.withdraw($10,000);  // Balance is only $1,300
 
-    public AccountLedgerSnapshot(UUID aggregateId, long version, Instant createdAt,
-                                String accountNumber, BigDecimal balance, String currency) {
-        super(aggregateId, version, createdAt);
-        this.accountNumber = accountNumber;
-        this.balance = balance;
-        this.currency = currency;
-    }
-
-    @Override
-    public String getSnapshotType() {
-        return "AccountLedger";
-    }
-}
-
-// 2. Create snapshots in your aggregate
-public AccountLedgerSnapshot createSnapshot() {
-    return new AccountLedgerSnapshot(
-        getId(), getCurrentVersion(), Instant.now(),
-        accountNumber, balance, currency
-    );
-}
-
-// 3. Restore from snapshot
-public static AccountLedger fromSnapshot(AccountLedgerSnapshot snapshot) {
-    AccountLedger account = new AccountLedger(snapshot.getAggregateId());
-    account.accountNumber = snapshot.getAccountNumber();
-    account.balance = snapshot.getBalance();
-    account.currency = snapshot.getCurrency();
-    account.setCurrentVersion(snapshot.getVersion());
-    return account;
-}
+Result: InsufficientFundsException ❌
+The aggregate protects your business rules!
 ```
 
-**Performance Comparison:**
-
+#### ✅ Fast Queries
 ```java
-// Without snapshots (slow for old accounts)
-Account account = new Account(accountId);
-account.loadFromHistory(events); // Could be 10,000+ events!
+// Find all high-balance accounts
+repository.findByBalanceGreaterThan($10,000);
 
-// With snapshots (much faster)
-Snapshot snapshot = snapshotStore.loadLatest(accountId);
-Account account = Account.fromSnapshot(snapshot);
-account.loadFromHistory(eventsAfterSnapshot); // Only recent events!
+Result: Milliseconds! (uses indexed read model table)
 ```
 
-**How Snapshots Work:**
+#### ✅ Time Travel
+```java
+// What was the balance on January 15th?
+service.getAccountAtTime(accountId, "2025-01-15T23:59:59Z");
 
-1. **Automatic Creation** - After N events (configurable threshold)
-   ```yaml
-   firefly:
-     eventsourcing:
-       snapshot:
-         threshold: 50  # Create snapshot every 50 events
-   ```
-
-2. **Smart Loading** - Event store checks for snapshots first
-   ```java
-   // Library automatically:
-   // 1. Loads latest snapshot (if exists)
-   // 2. Loads events since snapshot
-   // 3. Reconstructs current state
-   Account account = eventStore.loadAggregate(accountId, Account.class);
-   ```
-
-3. **Configurable Strategy**
-   ```yaml
-   firefly:
-     eventsourcing:
-       snapshot:
-         enabled: true
-         threshold: 50          # Events before snapshot
-         keep-count: 3          # Keep last 3 snapshots  
-         compression: true      # Compress snapshot data
-         caching: true          # Cache in memory
-   ```
-
-**Real Performance Impact:**
-```
-Without Snapshots:
-- Account with 1000 events: ~500ms load time
-- Account with 10000 events: ~5000ms load time
-
-With Snapshots (threshold=50):
-- Account with 1000 events: ~50ms load time
-- Account with 10000 events: ~50ms load time
+Result: Replays events up to that timestamp
+This is impossible with traditional databases!
 ```
 
-### 🔄 **How It All Works Together**
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Service
-    participant EventStore
-    participant Database
-    
-    Client->>Service: withdraw($100)
-    Service->>EventStore: loadEventStream(accountId)
-    EventStore->>Database: SELECT events WHERE aggregate_id=?
-    Database-->>EventStore: [AccountCreated, MoneyDeposited, ...]
-    EventStore-->>Service: EventStream
-    Service->>Service: account.loadFromHistory(events)
-    Service->>Service: account.withdraw($100)
-    Note over Service: Validates business rules
-    Service->>EventStore: appendEvents([MoneyWithdrawn])
-    EventStore->>Database: INSERT new event
-    Database-->>EventStore: Success
-    EventStore-->>Service: EventStream
-    Service-->>Client: Account with new balance
+#### ✅ Automatic Synchronization
+```
+Event happens → Projection listens → Read model updates
+All automatic, no manual sync code needed!
 ```
 
-**🎯 The Beauty of This Pattern:**
-- **📋 Complete Audit Trail** - Every change is recorded forever
-- **🔄 Business Logic Clarity** - Rules are explicit in aggregates
-- **⚡ Performance** - Snapshots handle large event streams
-- **🔒 Data Integrity** - Optimistic locking prevents conflicts
-- **📊 Rich Analytics** - Query events for insights and reporting
+#### ✅ Production-Ready Features
+- **ACID Transactions** - @EventSourcingTransactional ensures atomicity
+- **Concurrency Control** - Optimistic locking prevents conflicts
+- **Performance** - Snapshots optimize loading
+- **Scalability** - Reactive, non-blocking operations
+- **Observability** - Distributed tracing built-in
+
+### 🧠 Putting It All Together
+
+**The Complete Flow (Deposit $500):**
+
+```
+1. User clicks "Deposit $500" in UI
+   ↓
+2. POST /accounts/{id}/deposit
+   ↓
+3. AccountLedgerService.deposit()
+   ↓
+4. Load account from events (or snapshot + recent events)
+   ↓
+5. AccountLedger.deposit($500)
+   - Validates: not closed ✅, amount > 0 ✅
+   - Generates: MoneyDepositedEvent
+   - Updates state: balance = balance + $500
+   ↓
+6. @EventSourcingTransactional saves event to database
+   ↓
+7. Event published to Kafka
+   ↓
+8. AccountLedgerProjectionService receives event
+   ↓
+9. Updates read model: balance = balance + $500
+   ↓
+10. User queries GET /accounts/{id}
+    → Returns updated balance instantly from read model!
+```
+
+**Database State After Deposit:**
+
+```sql
+-- events table (source of truth)
+INSERT INTO events (event_type, event_data, ...)
+VALUES ('money.deposited', '{"amount": 500, ...}', ...);
+
+-- account_ledger_read_model table (for fast queries)
+UPDATE account_ledger_read_model
+SET balance = balance + 500
+WHERE account_id = 'acc-123';
+```
+
+**What's NOT in the database:**
+```
+❌ No "account_ledger" table for the aggregate
+❌ Aggregate lives in memory only
+❌ State is always calculated from events
+```
+
+---
 
 ## Architecture
 
+### Event Sourcing Flow
+
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Application   │    │   Domain Layer  │    │  Infrastructure │
-│    Services     │    │   (Aggregates)  │    │     Layer       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│  Event Store    │    │     Events      │    │   EDA Publisher │
-│   Interface     │    │   & Streams     │    │   Integration   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                                             │
-         ▼                                             ▼
-┌─────────────────┐                          ┌─────────────────┐
-│  Persistence    │                          │   Message       │
-│   Adapters      │                          │   Brokers       │
-│  (R2DBC, etc.)  │                          │ (Kafka, etc.)   │
-└─────────────────┘                          └─────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    WRITE SIDE (Commands)                        │
+│                                                                 │
+│  Client Request (POST /deposit)                                 │
+│       ↓                                                         │
+│  AccountLedgerService (orchestration)                           │
+│       ↓                                                         │
+│  AccountLedger Aggregate (business rules)                       │
+│       ↓                                                         │
+│  Events (MoneyDepositedEvent, etc.)                             │
+│       ↓                                                         │
+│  EventStore → PostgreSQL events table                           │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             │ Events Published
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    READ SIDE (Queries)                          │
+│                                                                 │
+│  AccountLedgerProjectionService (event listener)                │
+│       ↓                                                         │
+│  AccountLedgerReadModel (denormalized view)                     │
+│       ↓                                                         │
+│  PostgreSQL account_ledger_read_model table                     │
+│       ↓                                                         │
+│  AccountLedgerRepository (queries)                              │
+│       ↓                                                         │
+│  Fast Query Results (GET /accounts/{id})                        │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## Configuration Properties
+### Component Responsibilities
 
-### Event Store
+| Component | Responsibility | Has Table? |
+|-----------|---------------|------------|
+| **Domain Events** | Immutable facts about what happened | ✅ `events` |
+| **Aggregate Root** | Business logic + state reconstruction | ❌ In-memory |
+| **Event Store** | Persist and retrieve events | ✅ `events` |
+| **Snapshots** | Performance optimization | ✅ `snapshots` |
+| **Service Layer** | Orchestrate operations | ❌ Logic only |
+| **Read Model** | Denormalized query view | ✅ Custom table |
+| **Projection** | Keep read model in sync | ❌ Logic only |
+| **Repository** | Query read model | ❌ Data access |
+
+---
+
+## Configuration
+
+### Database Configuration
+
+```yaml
+spring:
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/eventstore
+    username: postgres
+    password: postgres
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+```
+
+### Event Sourcing Configuration
+
 ```yaml
 firefly:
   eventsourcing:
+    enabled: true
+
+    # Event Store
     store:
-      type: r2dbc                    # Event store type
-      batch-size: 100                # Batch size for operations
-      connection-timeout: 30s        # Connection timeout
-      query-timeout: 30s             # Query timeout
-      validate-schemas: true         # Validate event schemas
-      max-events-per-load: 1000      # Max events per load
-```
+      type: r2dbc
+      batch-size: 100
+      connection-timeout: 30s
+      query-timeout: 30s
+      max-events-per-load: 1000
 
-### Snapshots
-```yaml
-firefly:
-  eventsourcing:
+    # Snapshots
     snapshot:
-      enabled: true                  # Enable snapshots
-      threshold: 50                  # Events before snapshot
-      check-interval: 5m             # Snapshot check frequency
-      keep-count: 3                  # Snapshots to keep
-      max-age: 30d                   # Maximum snapshot age
-      compression: true              # Compress snapshots
-      caching: true                  # Enable snapshot caching
-```
+      enabled: true
+      threshold: 50              # Create snapshot every 50 events
+      keep-count: 3              # Keep last 3 snapshots
+      compression: true          # Compress snapshot data
+      caching: true              # Cache snapshots in memory
 
-### Publisher
-```yaml
-firefly:
-  eventsourcing:
+    # Event Publishing
     publisher:
-      enabled: true                  # Enable event publishing
-      type: KAFKA                    # Publisher type
-      destination-prefix: events     # Topic/queue prefix
-      async: true                    # Async publishing
-      batch-size: 10                # Publishing batch size
-      continue-on-failure: true     # Continue on publish failures
+      enabled: true
+      type: KAFKA
+      destination-prefix: events
+      async: true
+      batch-size: 10
+
+    # Optional: Circuit Breaker
+    resilience:
+      circuit-breaker:
+        enabled: true
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 60s
+
+    # Optional: Distributed Tracing
+    tracing:
+      enabled: true
+
+    # Optional: Multi-tenancy
+    multitenancy:
+      enabled: false
 ```
 
-## Database Schema
-
-### PostgreSQL (R2DBC)
-```sql
-CREATE TABLE events (
-    event_id UUID PRIMARY KEY,
-    aggregate_id UUID NOT NULL,
-    aggregate_type VARCHAR(255) NOT NULL,
-    aggregate_version BIGINT NOT NULL,
-    global_sequence BIGSERIAL UNIQUE,
-    event_type VARCHAR(255) NOT NULL,
-    event_data JSONB NOT NULL,
-    metadata JSONB,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(aggregate_id, aggregate_version)
-);
-
-CREATE INDEX idx_events_aggregate ON events(aggregate_id, aggregate_type);
-CREATE INDEX idx_events_global_sequence ON events(global_sequence);
-CREATE INDEX idx_events_type ON events(event_type);
-CREATE INDEX idx_events_created_at ON events(created_at);
-```
-
-### Snapshots Table
-```sql
-CREATE TABLE snapshots (
-    snapshot_id UUID PRIMARY KEY,
-    aggregate_id UUID NOT NULL,
-    aggregate_type VARCHAR(255) NOT NULL,
-    version BIGINT NOT NULL,
-    snapshot_type VARCHAR(255) NOT NULL,
-    snapshot_data JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(aggregate_id, version)
-);
-
-CREATE INDEX idx_snapshots_aggregate ON snapshots(aggregate_id, aggregate_type);
-CREATE INDEX idx_snapshots_version ON snapshots(version);
-```
-
-## Best Practices
-
-1. **Event Design**
-   - Keep events small and focused
-   - Make events immutable
-   - Use meaningful event names
-   - Include all necessary data
-
-2. **Aggregate Design**
-   - Keep aggregates small
-   - Maintain consistency boundaries
-   - Avoid loading multiple aggregates in a single transaction
-   - Use eventual consistency between aggregates
-
-3. **Performance**
-   - Use snapshots for aggregates with many events
-   - Configure appropriate batch sizes
-   - Monitor event store performance
-   - Consider read model projections
-
-4. **Error Handling**
-   - Handle concurrency exceptions gracefully
-   - Implement proper retry mechanisms
-   - Monitor failed event publishing
-   - Use circuit breakers for external dependencies
-
-## 📖 Documentation
-
-Comprehensive guides to help you master event sourcing:
-
-### 🎓 **Learning Path**
-1. **[Event Sourcing Explained](./docs/event-sourcing-explained.md)** - *Start here!* Understanding concepts, benefits, and when to use
-2. **[Quick Start Guide](./docs/quick-start.md)** - Build your first event-sourced app in 5 minutes
-3. **[Improved Developer Experience](./docs/examples/improved-developer-experience.md)** - Learn to use AbstractDomainEvent and enhanced AggregateRoot
-4. **[Banking Example](./docs/examples/banking-example.md)** - Complete real-world example with explanations
-
-### 📚 **Reference Guides**
-- **[Architecture Overview](./docs/architecture.md)** - System design and component interactions
-- **[API Reference](./docs/api-reference.md)** - Detailed interface documentation with examples
-- **[Configuration Reference](./docs/configuration.md)** - All configuration options explained
-- **[Testing Guide](./docs/testing.md)** - Testing strategies with Testcontainers
-- **[Database Schema](./docs/database-schema.md)** - Schema design and migration scripts
-
-### 💡 **Pro Tips**
-- **New to event sourcing?** → Start with [Event Sourcing Explained](./docs/event-sourcing-explained.md)
-- **Want to see it working?** → Check the [Banking Example](./docs/examples/banking-example.md)
-- **Ready for production?** → Read [Testing Guide](./docs/testing.md) and [Configuration Reference](./docs/configuration.md)
-
-## Integration with Other Firefly Libraries
-
-- **lib-common-r2dbc**: Reactive database access, filtering, pagination utilities, and transaction management
-- **lib-common-eda**: Event publishing to message brokers
-- **lib-common-cache**: Snapshot caching
-
-## Monitoring
-
-The library provides several monitoring capabilities:
-
-- **Health Indicators**: Event store and snapshot store health
-- **Metrics**: Event throughput, latencies, errors
-- **Distributed Tracing**: Automatic trace propagation
-- **Statistics**: Event counts, storage usage
+---
 
 ## Testing
 
-Use the provided test utilities for testing event-sourced aggregates:
+### Unit Testing Aggregates
 
 ```java
 @Test
-void testAccountWithdrawal() {
+void shouldDepositMoney() {
+    // Given
     UUID accountId = UUID.randomUUID();
-    Account account = new Account(accountId, "12345", BigDecimal.valueOf(1000));
-    
-    account.withdraw(BigDecimal.valueOf(100));
-    
-    assertEquals(BigDecimal.valueOf(900), account.getBalance());
-    assertEquals(1, account.getUncommittedEventCount());
+    AccountLedger account = new AccountLedger(
+        accountId, "ACC-001", "CHECKING",
+        customerId, BigDecimal.valueOf(1000), "USD"
+    );
+
+    // When
+    account.deposit(
+        BigDecimal.valueOf(500),
+        "Wire Transfer",
+        "REF-123",
+        "user-456"
+    );
+
+    // Then
+    assertEquals(BigDecimal.valueOf(1500), account.getBalance());
+    assertEquals(2, account.getUncommittedEventCount());
+}
+
+@Test
+void shouldPreventOverdraft() {
+    // Given
+    AccountLedger account = new AccountLedger(accountId);
+    account.loadFromHistory(List.of(
+        new AccountOpenedEvent(/* ... */, BigDecimal.valueOf(100))
+    ));
+
+    // When/Then
+    assertThrows(InsufficientFundsException.class, () ->
+        account.withdraw(BigDecimal.valueOf(200), "ATM", "REF-456", "user-123")
+    );
 }
 ```
 
+### Integration Testing with Testcontainers
+
+```java
+@SpringBootTest
+@Testcontainers
+class AccountLedgerIntegrationTest {
+
+    @Container
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15")
+        .withDatabaseName("eventstore_test");
+
+    @Autowired
+    private AccountLedgerService service;
+
+    @Autowired
+    private AccountLedgerRepository repository;
+
+    @Test
+    void shouldPersistEventsAndUpdateReadModel() {
+        // Given
+        UUID customerId = UUID.randomUUID();
+
+        // When: Open account
+        AccountLedger account = service.openAccount(
+            "ACC-001", "CHECKING", customerId,
+            BigDecimal.valueOf(1000), "USD"
+        ).block();
+
+        // Then: Read model should be updated
+        AccountLedgerReadModel readModel = repository
+            .findById(account.getId())
+            .block();
+
+        assertNotNull(readModel);
+        assertEquals(BigDecimal.valueOf(1000), readModel.getBalance());
+        assertEquals("ACC-001", readModel.getAccountNumber());
+    }
+}
+```
+
+---
+
+## Documentation
+
+### 📚 Complete Guides
+
+- **[Complete Tutorial: Account Ledger](./docs/tutorial-account-ledger.md)** - Step-by-step guide building a complete system
+- **[Event Sourcing Explained](./docs/event-sourcing-explained.md)** - Deep dive into concepts and patterns
+- **[Architecture Overview](./docs/architecture.md)** - System design and component interactions
+- **[Configuration Reference](./docs/configuration.md)** - All configuration options explained
+- **[API Reference](./docs/api-reference.md)** - Detailed interface documentation
+- **[Testing Guide](./docs/testing.md)** - Testing strategies with Testcontainers
+- **[Production Readiness](./PRODUCTION-READINESS.md)** - Deployment checklist and best practices
+- **[Optional Enhancements](./docs/optional-enhancements.md)** - Circuit breakers, tracing, multi-tenancy
+
+### 💡 Examples
+
+- **[Banking Example](./docs/examples/banking-example.md)** - Complete banking system
+- **[Improved Developer Experience](./docs/examples/improved-developer-experience.md)** - Using AbstractDomainEvent
+
+---
+
+## Best Practices
+
+### Event Design
+- ✅ Use **past tense names** (`AccountOpened`, not `OpenAccount`)
+- ✅ Make events **immutable** (final fields, no setters)
+- ✅ Include **all necessary data** (avoid lookups when replaying)
+- ✅ Keep events **small and focused** (single responsibility)
+- ✅ Use **@DomainEvent** annotation for type identification
+
+### Aggregate Design
+- ✅ Keep aggregates **small** (single consistency boundary)
+- ✅ **Validate in commands**, **apply in event handlers**
+- ✅ Avoid loading **multiple aggregates** in one transaction
+- ✅ Use **eventual consistency** between aggregates
+- ✅ **No database table** for aggregates (in-memory only)
+
+### Performance
+- ✅ Enable **snapshots** for aggregates with many events
+- ✅ Configure appropriate **batch sizes** (100-1000 events)
+- ✅ Use **read models** for complex queries
+- ✅ Monitor **event store performance** (query times, storage)
+- ✅ Consider **archiving** old events (after snapshots)
+
+### Error Handling
+- ✅ Handle **concurrency conflicts** with retries
+- ✅ Use **circuit breakers** for external dependencies
+- ✅ Monitor **failed event publishing** (dead letter queue)
+- ✅ Implement **idempotent** event handlers
+- ✅ Log **correlation IDs** for distributed tracing
+
+### Security
+- ✅ Store **user context** in event metadata
+- ✅ Implement **authorization** in command handlers
+- ✅ **Encrypt sensitive data** in events (PII, PCI)
+- ✅ Use **multi-tenancy** for SaaS applications
+- ✅ Audit **who, what, when** for compliance
+
+---
+
+## Integration with Other Firefly Libraries
+
+- **[lib-common-r2dbc](https://github.com/firefly-oss/lib-common-r2dbc)** - Reactive database access and transaction management
+- **[lib-common-eda](https://github.com/firefly-oss/lib-common-eda)** - Event publishing to Kafka and other message brokers
+- **[lib-transactional-engine](https://github.com/firefly-oss/lib-transactional-engine)** - Saga orchestration for distributed transactions
+- **[lib-common-cache](https://github.com/firefly-oss/lib-common-cache)** - Snapshot caching and performance optimization
+
+---
+
+## Contributing
+
+Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) before submitting pull requests.
+
+---
+
 ## License
 
-Licensed under the Apache License, Version 2.0.
+Copyright 2025 Firefly Software Solutions Inc
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+## Support
+
+- 📧 **Email**: support@getfirefly.io
+- 💬 **Discussions**: [GitHub Discussions](https://github.com/firefly-oss/lib-common-eventsourcing/discussions)
+- 🐛 **Issues**: [GitHub Issues](https://github.com/firefly-oss/lib-common-eventsourcing/issues)
+- 📖 **Documentation**: [Full Documentation](./docs/)
+
+---
+
+**Built with ❤️ by the Firefly Team**
