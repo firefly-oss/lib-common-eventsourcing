@@ -17,6 +17,7 @@
 package com.firefly.common.eventsourcing.domain;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.firefly.common.eventsourcing.annotation.DomainEvent;
 
 import java.time.Instant;
 import java.util.Map;
@@ -35,24 +36,40 @@ import java.util.UUID;
  * - Self-contained (include all necessary information)
  * - Domain-focused (represent business concepts, not technical operations)
  * <p>
- * Example implementations should follow this pattern:
+ * <b>Recommended Approach - Using @DomainEvent annotation:</b>
  * <pre>
  * {@code
- * @JsonTypeName("account.created")
+ * @DomainEvent("account.created")
+ * @SuperBuilder
+ * @Getter
+ * @NoArgsConstructor
+ * @AllArgsConstructor
+ * public class AccountCreatedEvent extends AbstractDomainEvent {
+ *     private String accountNumber;
+ *     private String accountType;
+ *     private BigDecimal initialBalance;
+ *     // No need to override getEventType() - it's read from the annotation!
+ * }
+ * }
+ * </pre>
+ * <p>
+ * <b>Alternative - Using Java Records:</b>
+ * <pre>
+ * {@code
+ * @DomainEvent("account.created")
  * public record AccountCreatedEvent(
  *     UUID aggregateId,
  *     String accountNumber,
  *     String accountType,
  *     BigDecimal initialBalance
  * ) implements Event {
- *     
- *     @Override
- *     public String getEventType() {
- *         return "account.created";
- *     }
+ *     // getEventType() is automatically provided by the default method
  * }
  * }
  * </pre>
+ *
+ * @see DomainEvent
+ * @see AbstractDomainEvent
  */
 @JsonTypeInfo(
     use = JsonTypeInfo.Id.NAME,
@@ -77,10 +94,27 @@ public interface Event {
      * This should be a stable, unique identifier for this type of event,
      * typically in dot notation (e.g., "account.created", "payment.processed").
      * This value is used for event serialization and deserialization.
+     * <p>
+     * <b>Default Implementation:</b>
+     * The default implementation reads the event type from the {@link DomainEvent}
+     * annotation. If the annotation is not present, it throws an exception.
+     * <p>
+     * You can override this method if you need custom logic, but using the
+     * {@link DomainEvent} annotation is the recommended approach.
      *
      * @return the event type, never null or empty
+     * @throws IllegalStateException if @DomainEvent annotation is not present
      */
-    String getEventType();
+    default String getEventType() {
+        DomainEvent annotation = this.getClass().getAnnotation(DomainEvent.class);
+        if (annotation == null) {
+            throw new IllegalStateException(
+                "Event class " + this.getClass().getSimpleName() +
+                " must be annotated with @DomainEvent or override getEventType() method"
+            );
+        }
+        return annotation.value();
+    }
 
     /**
      * Gets additional metadata for this event.

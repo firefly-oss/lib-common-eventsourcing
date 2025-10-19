@@ -18,8 +18,10 @@ package com.firefly.common.eventsourcing.aggregate;
 
 import com.firefly.common.eventsourcing.domain.Event;
 import com.firefly.common.eventsourcing.domain.EventEnvelope;
+import com.firefly.common.eventsourcing.logging.EventSourcingLoggingContext;
 import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,47 +29,152 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Base class for event-sourced aggregates.
+ * Base class for event-sourced aggregates that provides the foundation for
+ * implementing Domain-Driven Design aggregates with Event Sourcing.
  * <p>
- * This class provides the fundamental infrastructure for implementing
- * event sourcing patterns in domain aggregates. It handles:
- * - Event application and state reconstruction
- * - Uncommitted event tracking
- * - Version management for optimistic concurrency control
- * - Event sourcing lifecycle management
+ * <b>What is an Aggregate?</b><br>
+ * An aggregate is a cluster of domain objects that can be treated as a single unit
+ * for data changes. It enforces business rules and maintains consistency boundaries.
+ * In Event Sourcing, aggregates generate events to record state changes.
  * <p>
- * Subclasses should:
- * 1. Provide event handler methods (named "on" + EventClass)
- * 2. Use {@link #applyChange(Event)} to apply new events
- * 3. Implement business logic that produces events
- * 4. Follow the aggregate design principles
+ * <b>Key Responsibilities:</b>
+ * <ul>
+ *   <li><b>Business Logic</b> - Validates commands and enforces business rules</li>
+ *   <li><b>Event Generation</b> - Produces events when state changes occur</li>
+ *   <li><b>State Reconstruction</b> - Rebuilds current state from event history</li>
+ *   <li><b>Consistency Boundary</b> - Ensures all invariants are maintained</li>
+ *   <li><b>Optimistic Concurrency</b> - Tracks version for conflict detection</li>
+ * </ul>
  * <p>
- * Example usage:
+ * <b>How to Use:</b>
+ * <ol>
+ *   <li>Extend this class and define your aggregate's state as private fields</li>
+ *   <li>Create command methods (public) that validate and generate events</li>
+ *   <li>Create event handler methods (private) named "on" that update state</li>
+ *   <li>Use {@link #applyChange(Event)} to apply new events</li>
+ *   <li>Never modify state directly - always through events!</li>
+ * </ol>
+ * <p>
+ * <b>Complete Example:</b>
  * <pre>
  * {@code
- * public class Account extends AggregateRoot {
+ * public class BankAccount extends AggregateRoot {
+ *     // State (derived from events)
  *     private String accountNumber;
  *     private BigDecimal balance;
- *     
- *     public Account(UUID id) {
- *         super(id, "Account");
- *     }
- *     
- *     public void withdraw(BigDecimal amount) {
- *         if (balance.compareTo(amount) < 0) {
- *             throw new InsufficientFundsException();
+ *     private AccountStatus status;
+ *
+ *     // Constructor for creating new aggregates
+ *     public BankAccount(UUID id, String accountNumber, BigDecimal initialBalance) {
+ *         super(id, "BankAccount");
+ *
+ *         // Validate business rules
+ *         if (initialBalance.compareTo(BigDecimal.ZERO) < 0) {
+ *             throw new IllegalArgumentException("Initial balance cannot be negative");
  *         }
- *         applyChange(new MoneyWithdrawnEvent(getId(), amount));
+ *
+ *         // Generate event
+ *         applyChange(AccountCreatedEvent.builder()
+ *             .aggregateId(id)
+ *             .accountNumber(accountNumber)
+ *             .initialBalance(initialBalance)
+ *             .build());
  *     }
- *     
+ *
+ *     // Constructor for loading from event store
+ *     public BankAccount(UUID id) {
+ *         super(id, "BankAccount");
+ *     }
+ *
+ *     // Command method - validates and generates events
+ *     public void withdraw(BigDecimal amount, String reason) {
+ *         // 1. Validate business rules
+ *         if (status != AccountStatus.ACTIVE) {
+ *             throw new AccountNotActiveException("Account is not active");
+ *         }
+ *         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+ *             throw new IllegalArgumentException("Amount must be positive");
+ *         }
+ *         if (balance.compareTo(amount) < 0) {
+ *             throw new InsufficientFundsException("Insufficient funds");
+ *         }
+ *
+ *         // 2. Generate event (what happened)
+ *         applyChange(MoneyWithdrawnEvent.builder()
+ *             .aggregateId(getId())
+ *             .amount(amount)
+ *             .reason(reason)
+ *             .build());
+ *     }
+ *
+ *     // Event handler - updates state (no validation!)
+ *     private void on(AccountCreatedEvent event) {
+ *         this.accountNumber = event.getAccountNumber();
+ *         this.balance = event.getInitialBalance();
+ *         this.status = AccountStatus.ACTIVE;
+ *     }
+ *
+ *     // Event handler - updates state
  *     private void on(MoneyWithdrawnEvent event) {
  *         this.balance = this.balance.subtract(event.getAmount());
  *     }
+ *
+ *     // Getters for read-only access
+ *     public BigDecimal getBalance() { return balance; }
+ *     public String getAccountNumber() { return accountNumber; }
  * }
  * }
  * </pre>
+ * <p>
+ * <b>Event Handler Convention:</b><br>
+ * Event handlers must be named "on" and accept a single event parameter.
+ * They can be private or protected. The framework uses reflection to find
+ * and invoke the appropriate handler.
+ * <pre>
+ * {@code
+ * // Option 1: Method named "on" with event type parameter
+ * private void on(MoneyWithdrawnEvent event) { ... }
+ *
+ * // Option 2: Method named "on" + EventClassName
+ * private void onMoneyWithdrawnEvent(MoneyWithdrawnEvent event) { ... }
+ * }
+ * </pre>
+ * <p>
+ * <b>Best Practices:</b>
+ * <ul>
+ *   <li>Keep aggregates small and focused on a single business concept</li>
+ *   <li>Never modify state directly - always use events via applyChange()</li>
+ *   <li>Command methods should validate, event handlers should not</li>
+ *   <li>Make event handlers private to prevent external state manipulation</li>
+ *   <li>Use meaningful aggregate type names (e.g., "BankAccount", not "Account")</li>
+ *   <li>Don't load other aggregates within an aggregate - use eventual consistency</li>
+ *   <li>Provide both constructors: one for creation, one for loading from history</li>
+ * </ul>
+ * <p>
+ * <b>Common Patterns:</b>
+ * <pre>
+ * {@code
+ * // Pattern 1: Creation
+ * BankAccount account = new BankAccount(UUID.randomUUID(), "12345", BigDecimal.valueOf(1000));
+ * eventStore.appendEvents(account.getId(), "BankAccount", account.getUncommittedEvents(), 0);
+ * account.markEventsAsCommitted();
+ *
+ * // Pattern 2: Loading and modifying
+ * EventStream stream = eventStore.loadEventStream(accountId, "BankAccount");
+ * BankAccount account = new BankAccount(accountId);
+ * account.loadFromHistory(stream.getEvents());
+ * account.withdraw(BigDecimal.valueOf(100), "ATM Withdrawal");
+ * eventStore.appendEvents(accountId, "BankAccount", account.getUncommittedEvents(), account.getVersion());
+ * account.markEventsAsCommitted();
+ * }
+ * </pre>
+ *
+ * @see Event
+ * @see EventEnvelope
+ * @see com.firefly.common.eventsourcing.store.EventStore
  */
 @Getter
+@Slf4j
 public abstract class AggregateRoot {
 
     /**
@@ -109,10 +216,12 @@ public abstract class AggregateRoot {
         if (aggregateType == null || aggregateType.trim().isEmpty()) {
             throw new IllegalArgumentException("Aggregate type cannot be null or empty");
         }
-        
+
         this.id = id;
         this.aggregateType = aggregateType.trim();
         this.version = 0L;
+
+        log.debug("Created new aggregate: id={}, type={}", id, aggregateType);
     }
 
     /**
@@ -131,17 +240,28 @@ public abstract class AggregateRoot {
         if (event == null) {
             throw new IllegalArgumentException("Event cannot be null");
         }
-        
+
         if (!id.equals(event.getAggregateId())) {
             throw new IllegalArgumentException(
-                "Event aggregate ID (" + event.getAggregateId() + 
+                "Event aggregate ID (" + event.getAggregateId() +
                 ") does not match aggregate ID (" + id + ")"
             );
         }
 
+        EventSourcingLoggingContext.setAggregateContext(id, aggregateType, version);
+        EventSourcingLoggingContext.setEventType(event.getEventType());
+
+        log.debug("Applying new event: aggregateId={}, type={}, eventType={}, currentVersion={}",
+                id, aggregateType, event.getEventType(), version);
+
         uncommittedEvents.add(event);
         applyEvent(event);
         version++;
+
+        log.debug("Event applied successfully. New version: {}, uncommitted events: {}",
+                version, uncommittedEvents.size());
+
+        EventSourcingLoggingContext.clearEventType();
     }
 
     /**
@@ -157,33 +277,47 @@ public abstract class AggregateRoot {
      */
     public void loadFromHistory(List<EventEnvelope> events) {
         if (events == null || events.isEmpty()) {
+            log.debug("No events to load for aggregate: id={}, type={}", id, aggregateType);
             return;
         }
+
+        EventSourcingLoggingContext.setAggregateContext(id, aggregateType);
+        log.info("Loading aggregate from history: id={}, type={}, eventCount={}",
+                id, aggregateType, events.size());
 
         // Validate all events belong to this aggregate
         for (EventEnvelope envelope : events) {
             if (!id.equals(envelope.getAggregateId())) {
                 throw new IllegalArgumentException(
-                    "Event aggregate ID (" + envelope.getAggregateId() + 
+                    "Event aggregate ID (" + envelope.getAggregateId() +
                     ") does not match aggregate ID (" + id + ")"
                 );
             }
             if (!aggregateType.equals(envelope.getAggregateType())) {
                 throw new IllegalArgumentException(
-                    "Event aggregate type (" + envelope.getAggregateType() + 
+                    "Event aggregate type (" + envelope.getAggregateType() +
                     ") does not match aggregate type (" + aggregateType + ")"
                 );
             }
         }
 
         // Apply events in order
+        long startVersion = version;
         for (EventEnvelope envelope : events) {
+            if (log.isTraceEnabled()) {
+                log.trace("Applying historical event: eventType={}, version={}",
+                        envelope.getEvent().getEventType(), envelope.getAggregateVersion());
+            }
             applyEvent(envelope.getEvent());
             version = envelope.getAggregateVersion();
         }
 
         // Clear uncommitted events after loading from history
         uncommittedEvents.clear();
+
+        log.info("Aggregate loaded from history: id={}, type={}, version={} (from {} to {})",
+                id, aggregateType, version, startVersion, version);
+        EventSourcingLoggingContext.clearAggregateContext();
     }
 
     /**
@@ -231,6 +365,29 @@ public abstract class AggregateRoot {
      */
     protected void markAsDeleted() {
         this.deleted = true;
+    }
+
+    /**
+     * Gets the current version of the aggregate.
+     * <p>
+     * This is useful for snapshot creation and optimistic concurrency control.
+     *
+     * @return the current version
+     */
+    public long getCurrentVersion() {
+        return this.version;
+    }
+
+    /**
+     * Sets the version of the aggregate.
+     * <p>
+     * This should only be used when restoring from a snapshot.
+     * Normal version management is handled automatically by the framework.
+     *
+     * @param version the version to set
+     */
+    protected void setCurrentVersion(long version) {
+        this.version = version;
     }
 
     /**
