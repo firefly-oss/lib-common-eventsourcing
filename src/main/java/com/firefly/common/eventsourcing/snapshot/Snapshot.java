@@ -36,25 +36,35 @@ import java.util.UUID;
  * - Immutable (state should not change after creation)
  * - Self-contained (include all necessary state information)
  * <p>
- * Example implementation:
+ * <b>Recommended Approach:</b>
+ * <p>
+ * Instead of implementing this interface directly, extend {@link AbstractSnapshot}
+ * which provides common functionality and reduces boilerplate:
  * <pre>
  * {@code
- * public record AccountSnapshot(
- *     UUID aggregateId,
- *     String accountNumber,
- *     BigDecimal balance,
- *     String accountType,
- *     long version,
- *     Instant createdAt
- * ) implements Snapshot {
- *     
+ * @Getter
+ * public class AccountLedgerSnapshot extends AbstractSnapshot {
+ *     private final String accountNumber;
+ *     private final BigDecimal balance;
+ *     private final String currency;
+ *
+ *     public AccountLedgerSnapshot(UUID aggregateId, long version, Instant createdAt,
+ *                                 String accountNumber, BigDecimal balance, String currency) {
+ *         super(aggregateId, version, createdAt);
+ *         this.accountNumber = accountNumber;
+ *         this.balance = balance;
+ *         this.currency = currency;
+ *     }
+ *
  *     @Override
  *     public String getSnapshotType() {
- *         return "Account";
+ *         return "AccountLedger";
  *     }
  * }
  * }
  * </pre>
+ *
+ * @see AbstractSnapshot
  */
 public interface Snapshot {
 
