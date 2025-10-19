@@ -2,6 +2,38 @@
 
 Get up and running with the Firefly Event Sourcing Library in 5 minutes.
 
+> **💡 New to Event Sourcing?** Start with our comprehensive [Account Ledger Tutorial](./tutorial-account-ledger.md) that explains all concepts in depth with a complete working example.
+
+This quick start guide shows you how to set up the library and build a simple Account Ledger system. For a deeper understanding of why each component is necessary, see the [full tutorial](./tutorial-account-ledger.md).
+
+## 🗄️ **Important: What Gets a Database Table?**
+
+Before you start, understand this critical concept:
+
+| Component | Has Table? | Why? |
+|-----------|------------|------|
+| **Events** | ✅ YES (`events` table) | Source of truth, immutable history |
+| **Snapshots** | ✅ YES (`snapshots` table) | Performance optimization |
+| **Read Models** | ✅ YES (e.g., `account_ledger_read_model`) | Fast queries |
+| **Aggregates** | ❌ **NO TABLE** | Reconstructed from events in-memory |
+
+```java
+// ❌ WRONG: Do NOT create a table for aggregates
+@Table("account_ledger")
+public class AccountLedger extends AggregateRoot { }
+
+// ✅ CORRECT: Aggregates have no @Table annotation
+public class AccountLedger extends AggregateRoot {
+    // Lives in memory only!
+}
+
+// ✅ CORRECT: Read models DO have tables
+@Table("account_ledger_read_model")
+public class AccountLedgerReadModel { }
+```
+
+**The Golden Rule:** If you create a table for your aggregate, you're doing traditional CRUD, not event sourcing!
+
 ## Prerequisites
 
 - Java 21+
@@ -103,149 +135,156 @@ firefly:
 
 ## Step 4: Create Domain Events
 
-```java
-package com.example.domain.events;
+Use the `@DomainEvent` annotation for automatic event type registration:
 
-import com.fasterxml.jackson.annotation.JsonTypeName;
-import com.firefly.common.eventsourcing.domain.Event;
+```java
+package com.firefly.common.eventsourcing.examples.ledger.events;
+
+import com.firefly.common.eventsourcing.domain.AbstractDomainEvent;
+import com.firefly.common.eventsourcing.domain.DomainEvent;
+import lombok.Getter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 
-@JsonTypeName("account.created")
-public record AccountCreatedEvent(
-    UUID aggregateId,
-    String accountNumber,
-    BigDecimal initialBalance
-) implements Event {
-    
-    @Override
-    public String getEventType() {
-        return "account.created";
-    }
-    
-    @Override
-    public UUID getAggregateId() {
-        return aggregateId;
-    }
-    
-    @Override
-    public Instant getEventTimestamp() {
-        return Instant.now();
-    }
-    
-    @Override
-    public Map<String, Object> getMetadata() {
-        return Map.of("source", "banking-service");
+@Getter
+@DomainEvent(eventType = "AccountOpened", version = 1)
+public class AccountOpenedEvent extends AbstractDomainEvent {
+    private final String accountNumber;
+    private final String accountType;
+    private final UUID customerId;
+    private final BigDecimal initialDeposit;
+    private final String currency;
+
+    public AccountOpenedEvent(UUID aggregateId, String accountNumber, String accountType,
+                             UUID customerId, BigDecimal initialDeposit, String currency) {
+        super(aggregateId);
+        this.accountNumber = accountNumber;
+        this.accountType = accountType;
+        this.customerId = customerId;
+        this.initialDeposit = initialDeposit;
+        this.currency = currency;
     }
 }
 
-@JsonTypeName("money.deposited")
-public record MoneyDepositedEvent(
-    UUID aggregateId,
-    BigDecimal amount,
-    String reference
-) implements Event {
-    
-    @Override
-    public String getEventType() {
-        return "money.deposited";
-    }
-    
-    @Override
-    public UUID getAggregateId() {
-        return aggregateId;
-    }
-    
-    @Override
-    public Instant getEventTimestamp() {
-        return Instant.now();
-    }
-    
-    @Override
-    public Map<String, Object> getMetadata() {
-        return Map.of("source", "banking-service");
+@Getter
+@DomainEvent(eventType = "MoneyDeposited", version = 1)
+public class MoneyDepositedEvent extends AbstractDomainEvent {
+    private final BigDecimal amount;
+    private final String source;
+    private final String reference;
+    private final String depositedBy;
+
+    public MoneyDepositedEvent(UUID aggregateId, BigDecimal amount, String source,
+                              String reference, String depositedBy) {
+        super(aggregateId);
+        this.amount = amount;
+        this.source = source;
+        this.reference = reference;
+        this.depositedBy = depositedBy;
     }
 }
 ```
 
-## Step 5: Create Aggregate
+> **📚 See the [Account Ledger Tutorial](./tutorial-account-ledger.md#step-1-domain-events)** for all 6 domain events with detailed explanations.
+
+## Step 5: Create Aggregate Root
+
+The aggregate enforces business rules and generates events:
 
 ```java
-package com.example.domain.aggregates;
+package com.firefly.common.eventsourcing.examples.ledger;
 
 import com.firefly.common.eventsourcing.aggregate.AggregateRoot;
-import com.example.domain.events.*;
+import com.firefly.common.eventsourcing.aggregate.EventHandler;
+import com.firefly.common.eventsourcing.examples.ledger.events.*;
+import com.firefly.common.eventsourcing.examples.ledger.exceptions.*;
+import lombok.Getter;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
-public class Account extends AggregateRoot {
-    
+@Getter
+public class AccountLedger extends AggregateRoot {
+
     private String accountNumber;
+    private String accountType;
+    private UUID customerId;
     private BigDecimal balance;
-    private boolean active;
-    
-    // Constructor for new aggregates
-    public Account(UUID id, String accountNumber, BigDecimal initialBalance) {
-        super(id, "Account");
-        if (initialBalance.compareTo(BigDecimal.ZERO) < 0) {
-            throw new IllegalArgumentException("Initial balance cannot be negative");
+    private String currency;
+    private boolean frozen;
+    private boolean closed;
+    private Instant openedAt;
+
+    // Constructor for creating new accounts
+    public AccountLedger(UUID id, String accountNumber, String accountType,
+                        UUID customerId, BigDecimal initialDeposit, String currency) {
+        super(id, "AccountLedger");
+
+        // Validation
+        if (initialDeposit.compareTo(BigDecimal.ZERO) < 0) {
+            throw new IllegalArgumentException("Initial deposit cannot be negative");
         }
-        applyChange(new AccountCreatedEvent(id, accountNumber, initialBalance));
+
+        // Generate event
+        applyChange(new AccountOpenedEvent(id, accountNumber, accountType,
+                                          customerId, initialDeposit, currency));
     }
-    
-    // Constructor for reconstruction
-    public Account(UUID id) {
-        super(id, "Account");
+
+    // Constructor for loading from events
+    public AccountLedger(UUID id) {
+        super(id, "AccountLedger");
     }
-    
-    // Business methods
-    public void deposit(BigDecimal amount, String reference) {
-        if (!active) {
-            throw new IllegalStateException("Account is not active");
-        }
+
+    // Business method: Deposit money
+    public void deposit(BigDecimal amount, String source, String reference, String depositedBy) {
+        validateAccountIsActive();
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Deposit amount must be positive");
         }
-        applyChange(new MoneyDepositedEvent(getId(), amount, reference));
+        applyChange(new MoneyDepositedEvent(getId(), amount, source, reference, depositedBy));
     }
-    
-    // Event handlers
-    private void on(AccountCreatedEvent event) {
-        this.accountNumber = event.accountNumber();
-        this.balance = event.initialBalance();
-        this.active = true;
+
+    // Event handler
+    @EventHandler
+    public void apply(AccountOpenedEvent event) {
+        this.accountNumber = event.getAccountNumber();
+        this.accountType = event.getAccountType();
+        this.customerId = event.getCustomerId();
+        this.balance = event.getInitialDeposit();
+        this.currency = event.getCurrency();
+        this.frozen = false;
+        this.closed = false;
+        this.openedAt = Instant.now();
     }
-    
-    private void on(MoneyDepositedEvent event) {
-        this.balance = this.balance.add(event.amount());
+
+    @EventHandler
+    public void apply(MoneyDepositedEvent event) {
+        this.balance = this.balance.add(event.getAmount());
     }
-    
-    // Getters
-    public String getAccountNumber() {
-        return accountNumber;
-    }
-    
-    public BigDecimal getBalance() {
-        return balance;
-    }
-    
-    public boolean isActive() {
-        return active;
+
+    private void validateAccountIsActive() {
+        if (closed) throw new AccountClosedException(getId());
+        if (frozen) throw new AccountFrozenException(getId());
     }
 }
 ```
 
-## Step 6: Create Service
+> **📚 See the [Account Ledger Tutorial](./tutorial-account-ledger.md#step-2-the-aggregate-root)** for the complete implementation with all business methods and event handlers.
+
+## Step 6: Create Service Layer
+
+Use `@EventSourcingTransactional` for automatic event persistence:
 
 ```java
-package com.example.service;
+package com.firefly.common.eventsourcing.examples.ledger;
 
+import com.firefly.common.eventsourcing.annotation.EventSourcingTransactional;
+import com.firefly.common.eventsourcing.snapshot.SnapshotStore;
 import com.firefly.common.eventsourcing.store.EventStore;
-import com.example.domain.aggregates.Account;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -253,57 +292,77 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 @Service
-public class AccountService {
-    
+@RequiredArgsConstructor
+public class AccountLedgerService {
+
     private final EventStore eventStore;
-    
-    public AccountService(EventStore eventStore) {
-        this.eventStore = eventStore;
-    }
-    
-    public Mono<Account> createAccount(String accountNumber, BigDecimal initialBalance) {
+    private final SnapshotStore snapshotStore;
+
+    @EventSourcingTransactional
+    public Mono<AccountLedger> openAccount(String accountNumber, String accountType,
+                                          UUID customerId, BigDecimal initialDeposit,
+                                          String currency) {
         UUID accountId = UUID.randomUUID();
-        Account account = new Account(accountId, accountNumber, initialBalance);
-        
+        AccountLedger account = new AccountLedger(accountId, accountNumber, accountType,
+                                                  customerId, initialDeposit, currency);
+
         return eventStore.appendEvents(
                 accountId,
-                "Account",
+                "AccountLedger",
                 account.getUncommittedEvents(),
                 0L
             )
             .doOnSuccess(stream -> account.markEventsAsCommitted())
             .thenReturn(account);
     }
-    
-    public Mono<Account> loadAccount(UUID accountId) {
-        return eventStore.loadEventStream(accountId, "Account")
-                .map(stream -> {
-                    Account account = new Account(accountId);
-                    account.loadFromHistory(stream.getEvents());
-                    return account;
-                })
-                .switchIfEmpty(Mono.error(
-                    new RuntimeException("Account not found: " + accountId)
-                ));
-    }
-    
-    public Mono<Account> depositMoney(UUID accountId, BigDecimal amount, String reference) {
-        return loadAccount(accountId)
+
+    @EventSourcingTransactional
+    public Mono<AccountLedger> deposit(UUID accountId, BigDecimal amount, String source,
+                                      String reference, String depositedBy) {
+        return loadAggregate(accountId)
                 .flatMap(account -> {
-                    account.deposit(amount, reference);
-                    
+                    account.deposit(amount, source, reference, depositedBy);
+
                     return eventStore.appendEvents(
                             accountId,
-                            "Account",
+                            "AccountLedger",
                             account.getUncommittedEvents(),
-                            account.getVersion()
+                            account.getCurrentVersion()
                         )
                         .doOnSuccess(stream -> account.markEventsAsCommitted())
                         .thenReturn(account);
                 });
     }
+
+    private Mono<AccountLedger> loadAggregate(UUID accountId) {
+        // Try to load from snapshot first for performance
+        return snapshotStore.loadLatestSnapshot(accountId, "AccountLedger")
+                .flatMap(snapshot -> {
+                    AccountLedger account = AccountLedger.fromSnapshot(
+                        (AccountLedgerSnapshot) snapshot);
+
+                    // Load events after snapshot
+                    return eventStore.loadEventStream(accountId, "AccountLedger",
+                                                     snapshot.getVersion() + 1)
+                            .map(stream -> {
+                                account.loadFromHistory(stream.getEvents());
+                                return account;
+                            });
+                })
+                .switchIfEmpty(
+                    // No snapshot, load all events
+                    eventStore.loadEventStream(accountId, "AccountLedger")
+                            .map(stream -> {
+                                AccountLedger account = new AccountLedger(accountId);
+                                account.loadFromHistory(stream.getEvents());
+                                return account;
+                            })
+                );
+    }
 }
 ```
+
+> **📚 See the [Account Ledger Tutorial](./tutorial-account-ledger.md#step-4-the-service-layer)** for the complete service with all operations and snapshot management.
 
 ## Step 7: Create Controller
 
@@ -444,12 +503,16 @@ mvn flyway:migrate
 
 ## What's Next?
 
-- [Testing Guide](./testing.md) - Comprehensive testing with Testcontainers
-- [Configuration Reference](./configuration.md) - Explore all configuration options  
-- [Architecture Overview](./architecture.md) - Understand the system design
-- [Event Store Usage](./event-store.md) - Learn advanced querying features
-- [Snapshot Management](./snapshots.md) - Optimize performance with snapshots
-- [Best Practices](./best-practices.md) - Production recommendations
+### 📚 **Deep Dive into Event Sourcing**
+- **[Account Ledger Tutorial](./tutorial-account-ledger.md)** - Complete guide with all concepts explained
+- **[Event Sourcing Explained](./event-sourcing-explained.md)** - Understanding the fundamentals
+- **[Architecture Overview](./architecture.md)** - System design and patterns
+
+### 🔧 **Advanced Topics**
+- **[Testing Guide](./testing.md)** - Comprehensive testing with Testcontainers
+- **[Configuration Reference](./configuration.md)** - All configuration options
+- **[Database Schema](./database-schema.md)** - Understanding the data model
+- **[API Reference](./api-reference.md)** - Complete API documentation
 
 ## Troubleshooting
 

@@ -1,6 +1,31 @@
 # Banking Example
 
-Complete banking application example using the Firefly Event Sourcing Library.
+> **📚 This example has been superseded by the comprehensive [Account Ledger Tutorial](../tutorial-account-ledger.md).**
+
+The Account Ledger Tutorial provides a complete, production-ready banking example with:
+- ✅ All 6 domain events (AccountOpened, MoneyDeposited, MoneyWithdrawn, AccountFrozen, AccountUnfrozen, AccountClosed)
+- ✅ Complete aggregate implementation with business rules
+- ✅ Snapshot support for performance optimization
+- ✅ Service layer with @EventSourcingTransactional
+- ✅ Read models and projections for fast queries
+- ✅ Repository for fast queries
+- ✅ Integration tests demonstrating all features
+- ✅ Advanced topics (concurrency, sagas, multi-tenancy)
+
+## Quick Links
+
+- **[Account Ledger Tutorial](../tutorial-account-ledger.md)** - Complete guide with working code
+- **[Quick Start Guide](../quick-start.md)** - Get up and running in 5 minutes
+- **[Event Sourcing Explained](../event-sourcing-explained.md)** - Understanding the fundamentals
+
+---
+
+## Legacy Content (Deprecated)
+
+The content below is kept for reference but is deprecated. Please use the [Account Ledger Tutorial](../tutorial-account-ledger.md) instead.
+
+<details>
+<summary>Click to expand legacy content</summary>
 
 ## Overview
 
@@ -965,3 +990,13 @@ System.out.println("Version: " + account.version()); // Should be 3
 ```
 
 This example demonstrates a complete banking application with proper event sourcing patterns, domain-driven design, and reactive programming using the Firefly Event Sourcing Library.
+
+</details>
+
+---
+
+## Recommended Next Steps
+
+For the most up-to-date and comprehensive banking example, please refer to:
+
+👉 **[Account Ledger Tutorial](../tutorial-account-ledger.md)** - The official, maintained banking example for this library.

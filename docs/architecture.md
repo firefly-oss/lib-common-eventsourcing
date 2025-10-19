@@ -11,7 +11,7 @@ The Firefly Event Sourcing Library follows the principles of Domain-Driven Desig
 1. **Event Sourcing**: State is derived from a sequence of events
 2. **Reactive Programming**: Non-blocking operations using Project Reactor
 3. **Domain-Driven Design**: Rich domain models with clear boundaries
-4. **CQRS**: Separation of command and query responsibilities
+4. **Read/Write Separation**: Separate write models (aggregates) from read models (projections)
 5. **Eventual Consistency**: Asynchronous processing and integration
 
 ## Architecture Layers
@@ -94,7 +94,60 @@ The Firefly Event Sourcing Library follows the principles of Domain-Driven Desig
 - **Purpose**: Snapshot persistence for performance optimization
 - **Features**: Save, load, delete snapshots with versioning
 
-### 3. Integration Layer
+### 3. Transaction Management Layer
+
+#### @EventSourcingTransactional Annotation
+- **Package**: `com.firefly.common.eventsourcing.annotation`
+- **Purpose**: Declarative transaction management for event sourcing operations
+- **Features**:
+  - Full ACID guarantees (Atomicity, Consistency, Isolation, Durability)
+  - Configurable isolation levels (DEFAULT, READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE)
+  - Transaction propagation control (REQUIRED, REQUIRES_NEW, MANDATORY, NEVER, SUPPORTS, NOT_SUPPORTED)
+  - Automatic rollback on RuntimeException and Error
+  - Configurable rollback rules (rollbackFor, noRollbackFor)
+  - Automatic retry on concurrency conflicts with exponential backoff
+  - Automatic event publishing after successful commit (Transactional Outbox pattern)
+  - Timeout support
+  - Read-only transaction optimization
+
+#### EventSourcingTransactionalAspect
+- **Package**: `com.firefly.common.eventsourcing.transaction`
+- **Purpose**: AOP aspect that intercepts @EventSourcingTransactional methods
+- **Implementation**:
+  - Uses Spring AOP with AspectJ annotations
+  - Integrates with Spring's ReactiveTransactionManager
+  - Tracks pending events in Reactor Context during transaction
+  - Publishes events via EventSourcingPublisher after commit
+  - Implements retry logic with exponential backoff for ConcurrencyException
+  - Supports both Mono and Flux return types
+  - Maps isolation levels to Spring transaction constants
+  - Applies transaction propagation behavior
+
+**ACID Properties:**
+- **Atomicity**: All events saved or none (all-or-nothing) via database transactions
+- **Consistency**: Aggregate version checks prevent conflicts via optimistic locking
+- **Isolation**: Configurable isolation levels control visibility between concurrent transactions
+- **Durability**: Events persisted to database before method returns
+
+**Transaction Lifecycle:**
+1. Begin transaction with configured isolation level and propagation
+2. Execute business logic (load aggregate, apply changes)
+3. Append events to event store
+4. Track pending events in Reactor Context
+5. Commit transaction (or rollback on error)
+6. Publish events to message bus (only after successful commit)
+7. Return result to caller
+
+#### @DomainEvent Annotation
+- **Package**: `com.firefly.common.eventsourcing.annotation`
+- **Purpose**: Declarative event type definition aligned with Spring conventions
+- **Features**:
+  - Combines @JsonTypeName for Jackson polymorphic serialization
+  - Metadata: description, version, publishable flag, tags
+  - Eliminates need to override getEventType() method
+  - Compile-time validation of event type uniqueness
+
+### 4. Integration Layer
 
 #### EventSourcingPublisher
 - **Package**: `com.firefly.common.eventsourcing.publisher`

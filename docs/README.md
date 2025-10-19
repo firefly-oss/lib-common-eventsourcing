@@ -4,21 +4,23 @@ Welcome to the comprehensive documentation for the Firefly Event Sourcing Librar
 
 ## 🎯 **Choose Your Learning Path**
 
-### 🌱 **New to Event Sourcing?** 
+### 🌱 **New to Event Sourcing?**
 **Start here to understand the fundamentals:**
 
-1. **[Event Sourcing Explained](./event-sourcing-explained.md)** 🎓 - *Essential reading!* What it is, why it matters, when to use it
-2. **[Quick Start Guide](./quick-start.md)** ⚡ - Build your first event-sourced app in 5 minutes  
-3. **[Banking Example](./examples/banking-example.md)** 🏦 - Complete real-world example with explanations
-4. **[Testing Guide](./testing.md)** 🧪 - Learn to test event-sourced systems
+1. **[Account Ledger Tutorial](./tutorial-account-ledger.md)** 🏦 - *Start here!* Complete guide with production-ready code
+2. **[Event Sourcing Explained](./event-sourcing-explained.md)** 🎓 - What it is, why it matters, when to use it
+3. **[Quick Start Guide](./quick-start.md)** ⚡ - Build your first event-sourced app in 5 minutes
+4. **[Improved Developer Experience](./examples/improved-developer-experience.md)** 🎨 - Learn AbstractDomainEvent and enhanced patterns
+5. **[Testing Guide](./testing.md)** 🧪 - Learn to test event-sourced systems
 
 ### 💪 **Already Know Event Sourcing?**
 **Jump to implementation details:**
 
 1. **[Quick Start Guide](./quick-start.md)** ⚡ - Get coding immediately
-2. **[Architecture Overview](./architecture.md)** 🏗️ - Understand our design decisions
-3. **[API Reference](./api-reference.md)** 📖 - Detailed technical documentation
-4. **[Configuration Reference](./configuration.md)** ⚙️ - Production configuration options
+2. **[Account Ledger Tutorial](./tutorial-account-ledger.md)** 🏦 - See all patterns in action
+3. **[Architecture Overview](./architecture.md)** 🏗️ - Understand our design decisions
+4. **[API Reference](./api-reference.md)** 📖 - Detailed technical documentation
+5. **[Configuration Reference](./configuration.md)** ⚙️ - Production configuration options
 
 ## 🚀 **Why This Library?**
 

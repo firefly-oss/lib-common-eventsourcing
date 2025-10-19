@@ -1,10 +1,12 @@
 # Event Sourcing Explained 📚
 
+> **💡 Want a complete working example?** Check out our [Account Ledger Tutorial](./tutorial-account-ledger.md) that demonstrates all these concepts with production-ready code.
+
 ## What is Event Sourcing? 🤔
 
 Event Sourcing is a powerful architectural pattern that **stores all changes to application state as a sequence of events**. Instead of storing just the current state of data in your database, you store all the events that led to that state.
 
-Think of it like a **bank statement** - instead of just showing your current balance, it shows every transaction that happened to get to that balance.
+Think of it like an **Account Ledger** - instead of just showing your current balance, it shows every transaction (deposit, withdrawal, freeze, etc.) that happened to get to that balance.
 
 ## The Problem with Traditional CRUD 😰
 
@@ -34,6 +36,29 @@ CREATE TABLE accounts (
   - Did someone deposit $400 to $500?
   - When did the last change happen?
 
+### ⚠️ **Common Misconception: "Just add an aggregate table"**
+
+```sql
+-- ❌ WRONG: This is NOT event sourcing!
+CREATE TABLE account_ledger (
+    id UUID PRIMARY KEY,
+    balance DECIMAL,
+    status VARCHAR(20),
+    frozen BOOLEAN
+);
+```
+
+**Why this is wrong:**
+- ❌ You're storing current state, not events
+- ❌ You lose the complete history
+- ❌ You can't time-travel or replay events
+- ❌ This is just traditional CRUD with extra steps
+
+**The correct approach:**
+- ✅ Store events in the `events` table
+- ✅ Aggregates live in memory only (no table!)
+- ✅ Create read models for queries (separate tables)
+
 ## The Event Sourcing Solution ✅
 
 Instead of storing state, we store **events** (facts about what happened):
@@ -50,19 +75,30 @@ CREATE TABLE events (
 );
 ```
 
-**Same account with event sourcing:**
+**Same account with event sourcing (Account Ledger):**
 ```json
 [
   {
-    "eventType": "AccountCreated",
+    "eventType": "AccountOpened",
     "aggregateId": "acc-123",
-    "data": { "initialBalance": 1000, "accountNumber": "12345" },
+    "data": {
+      "accountNumber": "ACC-2025-001",
+      "accountType": "CHECKING",
+      "customerId": "cust-456",
+      "initialDeposit": 1000,
+      "currency": "USD"
+    },
     "timestamp": "2023-01-15T10:00:00Z"
   },
   {
-    "eventType": "MoneyWithdrawn", 
+    "eventType": "MoneyWithdrawn",
     "aggregateId": "acc-123",
-    "data": { "amount": 100, "reason": "ATM Withdrawal", "location": "Main St" },
+    "data": {
+      "amount": 100,
+      "destination": "ATM",
+      "reference": "ATM-001",
+      "withdrawnBy": "user-123"
+    },
     "timestamp": "2023-01-15T14:30:00Z"
   }
 ]
@@ -70,6 +106,8 @@ CREATE TABLE events (
 // Current state: $900 (calculated from events)
 // We know EVERYTHING that happened! 🎉
 ```
+
+> **📚 See the [Account Ledger Tutorial](./tutorial-account-ledger.md)** for the complete implementation of this example.
 
 ## Key Benefits of Event Sourcing 🚀
 
@@ -253,19 +291,131 @@ public class EventStoreMetrics {
 
 **Why?** Production banking systems need observability. We built-in metrics, health checks, and monitoring.
 
+## 🗄️ **Database Tables in Event Sourcing: What Goes Where?**
+
+This is the most critical concept to understand:
+
+### **Tables You MUST Create:**
+
+#### 1. **Events Table** (Source of Truth)
+```sql
+CREATE TABLE events (
+    event_id UUID PRIMARY KEY,
+    aggregate_id UUID NOT NULL,
+    event_type VARCHAR(255) NOT NULL,
+    event_data JSONB NOT NULL,
+    version BIGINT NOT NULL,
+    created_at TIMESTAMP
+);
+```
+**Purpose:** Store all domain events (immutable history)
+
+#### 2. **Snapshots Table** (Performance)
+```sql
+CREATE TABLE snapshots (
+    aggregate_id UUID NOT NULL,
+    aggregate_type VARCHAR(255) NOT NULL,
+    aggregate_version BIGINT NOT NULL,
+    snapshot_data JSONB NOT NULL,
+    created_at TIMESTAMP
+);
+```
+**Purpose:** Cache aggregate state to avoid replaying millions of events
+
+#### 3. **Read Model Tables** (Queries)
+```sql
+CREATE TABLE account_ledger_read_model (
+    account_id UUID PRIMARY KEY,
+    account_number VARCHAR(50),
+    balance DECIMAL(19,4),
+    currency VARCHAR(3),
+    frozen BOOLEAN,
+    closed BOOLEAN,
+    status VARCHAR(20),
+    last_updated TIMESTAMP
+);
+```
+**Purpose:** Fast queries without event replay (traditional table!)
+
+### **Tables You MUST NOT Create:**
+
+#### ❌ **NO Aggregate Table**
+```sql
+-- ❌ WRONG: Do NOT create this!
+CREATE TABLE account_ledger (
+    id UUID PRIMARY KEY,
+    balance DECIMAL,
+    frozen BOOLEAN
+);
+```
+
+**Why NOT?**
+- Aggregates are **reconstructed from events** in memory
+- Creating an aggregate table means you're doing CRUD, not event sourcing
+- The aggregate's state is **derived**, not stored
+
+### **The Complete Picture:**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    WRITE SIDE                                │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  AccountLedger (Aggregate)                                  │
+│  ├─ NO TABLE ❌                                             │
+│  ├─ Lives in memory only                                    │
+│  ├─ Loaded from events table                                │
+│  └─ Discarded after command execution                       │
+│                                                              │
+│  Events                                                      │
+│  ├─ HAS TABLE ✅ (events)                                   │
+│  ├─ Immutable, append-only                                  │
+│  └─ Source of truth                                         │
+│                                                              │
+│  Snapshots                                                   │
+│  ├─ HAS TABLE ✅ (snapshots)                                │
+│  └─ Performance optimization                                │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────┐
+│                    READ SIDE                                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  AccountLedgerReadModel                                     │
+│  ├─ HAS TABLE ✅ (account_ledger_read_model)                │
+│  ├─ Traditional table with indexes                          │
+│  ├─ Updated by projections                                  │
+│  └─ Optimized for queries                                   │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### **Summary Table:**
+
+| Component | Table? | Table Name | Mutable? | Purpose |
+|-----------|--------|------------|----------|---------|
+| Events | ✅ YES | `events` | ❌ Append-only | Source of truth |
+| Snapshots | ✅ YES | `snapshots` | ❌ Append-only | Performance |
+| Read Models | ✅ YES | `*_read_model` | ✅ Updated | Fast queries |
+| Aggregates | ❌ **NO** | N/A | N/A | Business logic (in-memory) |
+
+---
+
 ## Common Patterns We Implemented 🎯
 
 ### **1. Aggregate Pattern**
 - Encapsulates business logic
 - Maintains consistency boundaries
 - Generates events from commands
+- **Lives in memory only - NO TABLE!**
 
 ### **2. Repository Pattern** 
 - `EventStore` abstracts persistence
 - Clean separation of domain and infrastructure
 - Easy to test and switch implementations
 
-### **3. CQRS (Command Query Responsibility Segregation)**
+### **3. Read/Write Separation**
 - Commands modify state (write side)
 - Queries read projections (read side)  
 - Optimized for different access patterns
@@ -297,20 +447,97 @@ if (eventCount > snapshotThreshold) {
 
 ## When to Use Event Sourcing 🤷‍♂️
 
-### ✅ **Great for:**
-- **Audit Requirements**: Financial, medical, legal systems
-- **Complex Business Logic**: Banking, trading, insurance
-- **Analytics Heavy**: Need to answer "how did we get here?"
-- **Temporal Queries**: "What was the state on X date?"
-- **High Scalability**: Read-heavy systems with complex reporting
+### Decision Framework: Event Sourcing vs Traditional Tables
 
-### ❌ **Consider Alternatives for:**
-- **Simple CRUD**: Basic user profiles, settings
-- **Low Audit Requirements**: Internal tools, caches
-- **Small Teams**: Additional complexity might not be worth it
-- **Rapid Prototyping**: Adds development overhead
+```mermaid
+graph TD
+    A[New Feature/System] --> B{Need Complete<br/>Audit Trail?}
+    B -->|Yes| C{Complex<br/>Business Logic?}
+    B -->|No| D{Temporal<br/>Queries Needed?}
 
-## Real-World Banking Example 🏦
+    C -->|Yes| E[✅ Event Sourcing<br/>Perfect Fit]
+    C -->|No| F{High Volume<br/>Analytics?}
+
+    D -->|Yes| E
+    D -->|No| G{Simple<br/>CRUD Only?}
+
+    F -->|Yes| E
+    F -->|No| H[⚠️ Consider<br/>Event Sourcing]
+
+    G -->|Yes| I[❌ Traditional Tables<br/>Better Choice]
+    G -->|No| H
+
+    style E fill:#90EE90
+    style I fill:#FFB6C6
+    style H fill:#FFE4B5
+```
+
+### ✅ **Event Sourcing is Great For:**
+
+| Use Case | Why Event Sourcing Wins | Example |
+|----------|------------------------|---------|
+| **Financial Systems** | Complete audit trail, regulatory compliance, fraud detection | Banking transactions, payment processing, trading platforms |
+| **Complex Business Logic** | Clear separation of commands and events, testable business rules | Insurance claims, order fulfillment, inventory management |
+| **Temporal Queries** | Time travel capabilities, state reconstruction at any point | "What was the account balance on Dec 31?" |
+| **Analytics & BI** | Rich event history for pattern analysis and reporting | Customer behavior analysis, transaction patterns |
+| **Debugging & Support** | Complete history of what happened and why | Customer service investigations, bug reproduction |
+| **Event-Driven Architecture** | Natural fit for microservices and async processing | Distributed systems, event-driven microservices |
+
+### ❌ **Traditional Tables are Better For:**
+
+| Use Case | Why Traditional Wins | Example |
+|----------|---------------------|---------|
+| **Simple CRUD** | Less complexity, faster development | User profiles, application settings, reference data |
+| **Low Audit Requirements** | No need for historical data | Cache tables, temporary data, session storage |
+| **Rapid Prototyping** | Quick to implement and iterate | MVPs, proof of concepts, internal tools |
+| **Small Teams** | Less infrastructure and learning curve | Startups with limited resources |
+| **Mostly Static Data** | Infrequent updates, current state is sufficient | Product catalogs, configuration data |
+
+### 🎯 **Comparison Table: Event Sourcing vs Traditional**
+
+| Aspect | Event Sourcing | Traditional Tables |
+|--------|---------------|-------------------|
+| **Data Storage** | All events (append-only) | Current state only |
+| **Audit Trail** | ✅ Complete, automatic | ❌ Requires separate audit tables |
+| **Time Travel** | ✅ Built-in | ❌ Not possible without versioning |
+| **Complexity** | ⚠️ Higher (events + projections) | ✅ Lower (simple CRUD) |
+| **Performance** | ✅ Fast writes (append-only)<br/>⚠️ Reads need projections | ✅ Fast reads<br/>⚠️ Writes can be slow |
+| **Scalability** | ✅ Excellent (immutable events) | ⚠️ Moderate (locking, updates) |
+| **Debugging** | ✅ Full history available | ❌ Lost information |
+| **Analytics** | ✅ Rich event data | ⚠️ Limited to current state |
+| **Learning Curve** | ⚠️ Steeper | ✅ Familiar to most developers |
+| **Storage Cost** | ⚠️ Higher (all events) | ✅ Lower (current state) |
+
+### 💡 **Hybrid Approach: Best of Both Worlds**
+
+You don't have to choose one or the other! Many successful systems use both:
+
+```java
+// Event Sourcing for critical business entities
+public class BankAccount extends AggregateRoot {
+    // Full event history for transactions
+    public void withdraw(BigDecimal amount) {
+        applyChange(new MoneyWithdrawnEvent(getId(), amount));
+    }
+}
+
+// Traditional tables for supporting data
+@Entity
+public class UserProfile {
+    // Simple CRUD for user preferences
+    private String displayName;
+    private String theme;
+    private String language;
+}
+```
+
+**When to use hybrid:**
+- Core business logic → Event Sourcing
+- Supporting/reference data → Traditional tables
+- User preferences → Traditional tables
+- Critical transactions → Event Sourcing
+
+## Real-World Example: Account Ledger 🏦
 
 ```java
 // Traditional approach - we lose information
@@ -320,49 +547,62 @@ public class Account {
     // Lost: When? How? Who? Why?
 }
 
-// Event sourcing approach - complete story
-public class Account extends AggregateRoot {
+// Event sourcing approach - complete story (Account Ledger)
+public class AccountLedger extends AggregateRoot {
     private BigDecimal balance;
-    
-    public void withdraw(WithdrawMoneyCommand cmd) {
+    private boolean frozen;
+    private boolean closed;
+
+    public void withdraw(BigDecimal amount, String destination,
+                        String reference, String withdrawnBy) {
         // Business rule validation
-        if (balance.compareTo(cmd.getAmount()) < 0) {
-            throw new InsufficientFundsException();
+        validateAccountIsActive();
+        if (balance.compareTo(amount) < 0) {
+            throw new InsufficientFundsException(getId());
         }
-        
+
         // Record what happened
         applyChange(new MoneyWithdrawnEvent(
-            getId(), 
-            cmd.getAmount(), 
-            cmd.getReason(),
-            cmd.getAtmLocation(),
-            cmd.getUserId(),
-            Instant.now()
+            getId(),
+            amount,
+            destination,
+            reference,
+            withdrawnBy
         ));
     }
-    
-    private void on(MoneyWithdrawnEvent event) {
+
+    @EventHandler
+    public void apply(MoneyWithdrawnEvent event) {
         this.balance = this.balance.subtract(event.getAmount());
         // State is derived from events
+    }
+
+    private void validateAccountIsActive() {
+        if (closed) throw new AccountClosedException(getId());
+        if (frozen) throw new AccountFrozenException(getId());
     }
 }
 ```
 
+> **📚 See the complete [Account Ledger Tutorial](./tutorial-account-ledger.md)** for the full implementation with all business rules, events, and patterns.
+
 **Benefits in banking:**
-- Complete transaction history for compliance
-- Fraud detection through pattern analysis  
-- Customer service can see exact transaction details
-- Regulatory reporting is straightforward
-- Can replay events to test new business rules
+- ✅ Complete transaction history for regulatory compliance
+- ✅ Fraud detection through pattern analysis
+- ✅ Time travel for dispute resolution
+- ✅ Audit trail for regulators
+- ✅ Event replay for testing new business rules
+- ✅ Account freeze/unfreeze with full history
+- ✅ Snapshots for performance with high-volume accounts
 
 ## Next Steps 📖
 
 Now that you understand the concepts, explore:
 
-1. **[Quick Start Guide](./quick-start.md)** - Build your first event-sourced application
-2. **[API Reference](./api-reference.md)** - Detailed interface documentation  
-3. **[Configuration Guide](./configuration.md)** - Production setup options
-4. **[Testing Guide](./testing.md)** - How to test event-sourced systems
-5. **[Banking Example](./examples/banking-example.md)** - Complete real-world example
+1. **[Account Ledger Tutorial](./tutorial-account-ledger.md)** - Complete guide with working code
+2. **[Quick Start Guide](./quick-start.md)** - Build your first event-sourced application
+3. **[API Reference](./api-reference.md)** - Detailed interface documentation
+4. **[Configuration Guide](./configuration.md)** - Production setup options
+5. **[Testing Guide](./testing.md)** - How to test event-sourced systems
 
 Event sourcing might seem complex at first, but it provides powerful capabilities that traditional CRUD cannot match. The Firefly Event Sourcing Library handles the complexity so you can focus on your business logic! 🚀

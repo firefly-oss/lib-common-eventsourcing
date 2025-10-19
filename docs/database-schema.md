@@ -14,6 +14,7 @@ The primary table for storing all events in the system.
 
 ```sql
 CREATE TABLE events (
+    -- Core event fields
     event_id UUID PRIMARY KEY,
     aggregate_id UUID NOT NULL,
     aggregate_type VARCHAR(255) NOT NULL,
@@ -23,7 +24,21 @@ CREATE TABLE events (
     event_data JSONB NOT NULL,
     metadata JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(aggregate_id, aggregate_version)
+
+    -- Production enhancements (V4 migration)
+    updated_at TIMESTAMP WITH TIME ZONE,
+    created_by VARCHAR(255),
+    tenant_id VARCHAR(255),
+    correlation_id VARCHAR(255),
+    causation_id VARCHAR(255),
+    event_size_bytes INTEGER,
+    checksum VARCHAR(64),
+
+    -- Constraints
+    UNIQUE(aggregate_id, aggregate_version),
+    CHECK (aggregate_version > 0),
+    CHECK (event_type <> ''),
+    CHECK (aggregate_type <> '')
 );
 ```
 
@@ -40,6 +55,13 @@ CREATE TABLE events (
 | `event_data` | JSONB | NO | Serialized event data in JSON format |
 | `metadata` | JSONB | YES | Additional metadata (correlation IDs, etc.) |
 | `created_at` | TIMESTAMP WITH TIME ZONE | NO | When the event was persisted to the store |
+| `updated_at` | TIMESTAMP WITH TIME ZONE | YES | When the event was last updated (for corrections/migrations) |
+| `created_by` | VARCHAR(255) | YES | User or service that created the event |
+| `tenant_id` | VARCHAR(255) | YES | Tenant identifier for multi-tenancy support |
+| `correlation_id` | VARCHAR(255) | YES | Correlation ID for distributed tracing |
+| `causation_id` | VARCHAR(255) | YES | ID of the event that caused this event |
+| `event_size_bytes` | INTEGER | YES | Size of the event data in bytes (auto-calculated) |
+| `checksum` | VARCHAR(64) | YES | SHA-256 checksum of event data for integrity verification |
 
 ### Constraints
 
@@ -54,24 +76,111 @@ CREATE TABLE events (
 -- Primary key index (automatically created)
 -- CREATE UNIQUE INDEX events_pkey ON events(event_id);
 
--- Aggregate lookup (most common query pattern)
+-- Core indexes (V1 migration)
 CREATE INDEX idx_events_aggregate ON events(aggregate_id, aggregate_type);
-
--- Global sequence ordering (for event streaming)
 CREATE INDEX idx_events_global_sequence ON events(global_sequence);
-
--- Event type filtering (for projections)
 CREATE INDEX idx_events_type ON events(event_type);
-
--- Time-based queries (for temporal filtering)
 CREATE INDEX idx_events_created_at ON events(created_at);
 
--- Composite index for aggregate version range queries
-CREATE INDEX idx_events_aggregate_version ON events(aggregate_id, aggregate_version);
+-- Production indexes (V4 migration)
+CREATE INDEX idx_events_correlation_id ON events(correlation_id) WHERE correlation_id IS NOT NULL;
+CREATE INDEX idx_events_causation_id ON events(causation_id) WHERE causation_id IS NOT NULL;
+CREATE INDEX idx_events_tenant_id ON events(tenant_id) WHERE tenant_id IS NOT NULL;
+CREATE INDEX idx_events_created_by ON events(created_by) WHERE created_by IS NOT NULL;
 
--- JSONB indexes for metadata queries (optional, based on usage)
-CREATE INDEX idx_events_metadata_correlation ON events USING GIN ((metadata->>'correlationId'));
-CREATE INDEX idx_events_metadata_user ON events USING GIN ((metadata->>'userId'));
+-- Composite indexes for common query patterns
+CREATE INDEX idx_events_aggregate_type_created ON events(aggregate_type, created_at DESC);
+CREATE INDEX idx_events_type_created ON events(event_type, created_at DESC);
+CREATE INDEX idx_events_tenant_aggregate ON events(tenant_id, aggregate_id) WHERE tenant_id IS NOT NULL;
+
+-- JSONB indexes for metadata queries
+CREATE INDEX idx_events_metadata_gin ON events USING GIN (metadata jsonb_path_ops);
+
+-- Partial indexes for performance
+CREATE INDEX idx_events_recent ON events(created_at DESC) WHERE created_at > NOW() - INTERVAL '30 days';
+CREATE INDEX idx_events_aggregate_recent ON events(aggregate_id, aggregate_version DESC) WHERE created_at > NOW() - INTERVAL '90 days';
+```
+
+### Triggers
+
+```sql
+-- Auto-update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_events_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_events_updated_at
+    BEFORE UPDATE ON events
+    FOR EACH ROW
+    EXECUTE FUNCTION update_events_updated_at();
+
+-- Auto-calculate event size
+CREATE OR REPLACE FUNCTION calculate_event_size()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.event_size_bytes = LENGTH(NEW.event_data::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_calculate_event_size
+    BEFORE INSERT OR UPDATE ON events
+    FOR EACH ROW
+    EXECUTE FUNCTION calculate_event_size();
+```
+
+### Views
+
+```sql
+-- Event statistics by type
+CREATE OR REPLACE VIEW v_event_statistics AS
+SELECT
+    aggregate_type,
+    event_type,
+    COUNT(*) as event_count,
+    AVG(event_size_bytes) as avg_size_bytes,
+    MAX(event_size_bytes) as max_size_bytes,
+    MIN(created_at) as first_event_at,
+    MAX(created_at) as last_event_at,
+    COUNT(DISTINCT aggregate_id) as unique_aggregates
+FROM events
+GROUP BY aggregate_type, event_type;
+
+-- Recent events (last 24 hours)
+CREATE OR REPLACE VIEW v_recent_events AS
+SELECT
+    event_id,
+    aggregate_id,
+    aggregate_type,
+    event_type,
+    aggregate_version,
+    global_sequence,
+    created_at,
+    correlation_id,
+    tenant_id
+FROM events
+WHERE created_at > NOW() - INTERVAL '24 hours'
+ORDER BY created_at DESC;
+
+-- Aggregate summary (materialized view)
+CREATE MATERIALIZED VIEW mv_aggregate_summary AS
+SELECT
+    aggregate_id,
+    aggregate_type,
+    MAX(aggregate_version) as current_version,
+    COUNT(*) as total_events,
+    MIN(created_at) as created_at,
+    MAX(created_at) as last_modified_at,
+    SUM(event_size_bytes) as total_size_bytes,
+    tenant_id
+FROM events
+GROUP BY aggregate_id, aggregate_type, tenant_id;
+
+CREATE UNIQUE INDEX idx_mv_aggregate_summary_pk ON mv_aggregate_summary(aggregate_id, aggregate_type);
 ```
 
 ## Database Variations
