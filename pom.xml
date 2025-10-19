@@ -75,14 +75,6 @@
             <version>1.0.0-SNAPSHOT</version>
         </dependency>
 
-        <!-- Firefly Common Domain for domain abstractions -->
-        <dependency>
-            <groupId>com.firefly</groupId>
-            <artifactId>lib-common-domain</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
-            <optional>true</optional>
-        </dependency>
-
         <!-- Firefly Common Cache for snapshot caching -->
         <dependency>
             <groupId>com.firefly</groupId>
@@ -123,6 +115,27 @@
             <artifactId>micrometer-tracing-bridge-brave</artifactId>
         </dependency>
 
+        <!-- OpenTelemetry for distributed tracing -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+            <version>1.32.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+            <version>1.32.0</version>
+            <optional>true</optional>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+            <version>1.32.0</version>
+            <optional>true</optional>
+        </dependency>
+
+
         <!-- Circuit Breaker for Resilience -->
         <dependency>
             <groupId>io.github.resilience4j</groupId>
@@ -152,6 +165,13 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!-- Logstash Logback Encoder for structured JSON logging -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>7.4</version>
         </dependency>
 
         <!-- Testing -->

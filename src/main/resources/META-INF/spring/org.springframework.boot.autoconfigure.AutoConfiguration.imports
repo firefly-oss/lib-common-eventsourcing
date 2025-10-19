@@ -1,2 +1,5 @@
 com.firefly.common.eventsourcing.config.EventSourcingAutoConfiguration
 com.firefly.common.eventsourcing.config.EventSourcingProjectionAutoConfiguration
+com.firefly.common.eventsourcing.resilience.CircuitBreakerConfiguration
+com.firefly.common.eventsourcing.tracing.OpenTelemetryConfiguration
+com.firefly.common.eventsourcing.multitenancy.MultiTenancyConfiguration

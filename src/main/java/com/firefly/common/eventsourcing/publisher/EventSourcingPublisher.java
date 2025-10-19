@@ -21,6 +21,7 @@ import com.firefly.common.eda.publisher.EventPublisherFactory;
 import com.firefly.common.eventsourcing.config.EventSourcingProperties;
 import com.firefly.common.eventsourcing.domain.Event;
 import com.firefly.common.eventsourcing.domain.EventEnvelope;
+import com.firefly.common.eventsourcing.logging.EventSourcingLoggingContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -62,18 +63,33 @@ public class EventSourcingPublisher {
      * @return a Mono that completes when the event is published
      */
     public Mono<Void> publishEvent(EventEnvelope envelope) {
+        long startTime = System.currentTimeMillis();
+
         return Mono.fromRunnable(() -> validateEnvelope(envelope))
                 .then(getEventPublisher())
                 .flatMap(publisher -> {
                     String destination = determineDestination(envelope);
                     Map<String, Object> metadata = enrichMetadata(envelope);
-                    
-                    log.debug("Publishing event: type={}, aggregateId={}, destination={}", 
-                             envelope.getEventType(), envelope.getAggregateId(), destination);
-                    
+
+                    EventSourcingLoggingContext.setAggregateContext(envelope.getAggregateId(), envelope.getAggregateType());
+                    EventSourcingLoggingContext.setEventType(envelope.getEventType());
+
+                    log.info("Publishing event: eventId={}, type={}, aggregateId={}, destination={}",
+                             envelope.getEventId(), envelope.getEventType(), envelope.getAggregateId(), destination);
+
                     return publisher.publish(envelope.getEvent(), destination)
-                            .doOnSuccess(v -> log.debug("Event published successfully: {}", envelope.getEventId()))
-                            .doOnError(error -> log.error("Failed to publish event: {}", envelope.getEventId(), error));
+                            .doOnSuccess(v -> {
+                                long duration = System.currentTimeMillis() - startTime;
+                                log.info("Event published successfully: eventId={}, type={}, destination={} in {}ms",
+                                        envelope.getEventId(), envelope.getEventType(), destination, duration);
+                                EventSourcingLoggingContext.clearAll();
+                            })
+                            .doOnError(error -> {
+                                long duration = System.currentTimeMillis() - startTime;
+                                log.error("Failed to publish event: eventId={}, type={}, destination={} after {}ms",
+                                        envelope.getEventId(), envelope.getEventType(), destination, duration, error);
+                                EventSourcingLoggingContext.clearAll();
+                            });
                 });
     }
 
@@ -88,17 +104,26 @@ public class EventSourcingPublisher {
      */
     public Mono<Void> publishEvents(List<EventEnvelope> envelopes) {
         if (envelopes == null || envelopes.isEmpty()) {
+            log.debug("No events to publish (empty or null list)");
             return Mono.empty();
         }
 
-        log.debug("Publishing {} events", envelopes.size());
+        long startTime = System.currentTimeMillis();
+        log.info("Publishing batch of {} events", envelopes.size());
 
         return Flux.fromIterable(envelopes)
                 .flatMap(this::publishEvent)
-                .onErrorContinue((error, envelope) -> 
+                .onErrorContinue((error, envelope) ->
                     log.error("Failed to publish event in batch: {}", envelope, error))
                 .then()
-                .doOnSuccess(v -> log.debug("Batch publishing completed for {} events", envelopes.size()));
+                .doOnSuccess(v -> {
+                    long duration = System.currentTimeMillis() - startTime;
+                    log.info("Batch publishing completed for {} events in {}ms", envelopes.size(), duration);
+                })
+                .doOnError(error -> {
+                    long duration = System.currentTimeMillis() - startTime;
+                    log.error("Batch publishing failed after {}ms for {} events", duration, envelopes.size(), error);
+                });
     }
 
     /**
