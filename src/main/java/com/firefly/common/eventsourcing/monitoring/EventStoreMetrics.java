@@ -18,7 +18,6 @@ package com.firefly.common.eventsourcing.monitoring;
 
 import io.micrometer.core.instrument.*;
 import io.micrometer.core.instrument.Timer.Sample;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
@@ -44,7 +43,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * - event.store.batch.size (DistributionSummary)
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class EventStoreMetrics implements HealthIndicator {
 
