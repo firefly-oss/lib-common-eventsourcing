@@ -61,7 +61,7 @@ class PostgreSqlEventStoreIntegrationTest {
             .withDatabaseName("firefly_eventsourcing_test")
             .withUsername("firefly_test")
             .withPassword("test_password")
-            .withReuse(true);
+            .withReuse(false);
 
     private R2dbcEventStore eventStore;
     private DatabaseClient databaseClient;
@@ -123,32 +123,32 @@ class PostgreSqlEventStoreIntegrationTest {
                     aggregate_version BIGINT NOT NULL,
                     global_sequence BIGSERIAL UNIQUE,
                     event_type VARCHAR(255) NOT NULL,
-                    event_data JSONB NOT NULL,
-                    metadata JSONB,
+                    event_data TEXT NOT NULL,
+                    metadata TEXT,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     CONSTRAINT unique_aggregate_version UNIQUE(aggregate_id, aggregate_version)
                 )
                 """;
-        
+
         String createSnapshotsSql = """
                 CREATE TABLE IF NOT EXISTS snapshots (
                     aggregate_id UUID NOT NULL,
                     aggregate_type VARCHAR(255) NOT NULL,
                     aggregate_version BIGINT NOT NULL,
-                    snapshot_data JSONB NOT NULL,
+                    snapshot_data TEXT NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     PRIMARY KEY (aggregate_id, aggregate_type)
                 )
                 """;
-        
+
         String createOutboxSql = """
                 CREATE TABLE IF NOT EXISTS event_outbox (
                     outbox_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                     aggregate_id UUID NOT NULL,
                     aggregate_type VARCHAR(255) NOT NULL,
                     event_type VARCHAR(255) NOT NULL,
-                    event_data JSONB NOT NULL,
-                    metadata JSONB,
+                    event_data TEXT NOT NULL,
+                    metadata TEXT,
                     status VARCHAR(50) DEFAULT 'PENDING' NOT NULL,
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
                     processed_at TIMESTAMP WITH TIME ZONE,
@@ -174,12 +174,12 @@ class PostgreSqlEventStoreIntegrationTest {
             new TestMoneyDepositedEvent(aggregateId, BigDecimal.valueOf(50))
         );
 
-        // Append events
+        // Append events (expected version -1 means aggregate doesn't exist yet)
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", events, 0L)
+                eventStore.appendEvents(aggregateId, "Account", events, -1L)
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 3, events.size());
+                assertEventStream(stream, aggregateId, "Account", 2, events.size());
             })
             .verifyComplete();
 
@@ -188,7 +188,7 @@ class PostgreSqlEventStoreIntegrationTest {
                 eventStore.loadEventStream(aggregateId, "Account")
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 3, events.size());
+                assertEventStream(stream, aggregateId, "Account", 2, events.size());
                 // Verify event order and content
                 var envelopes = stream.getEvents();
                 assertEquals(events.get(0).getEventType(), envelopes.get(0).getEventType());
@@ -205,8 +205,8 @@ class PostgreSqlEventStoreIntegrationTest {
             new TestAccountCreatedEvent(aggregateId, "12345", BigDecimal.valueOf(1000))
         );
 
-        // Append initial events
-        eventStore.appendEvents(aggregateId, "Account", initialEvents, 0L).block();
+        // Append initial events (version -1 = new aggregate)
+        eventStore.appendEvents(aggregateId, "Account", initialEvents, -1L).block();
 
         // Try to append with wrong expected version
         List<Event> newEvents = List.of(
@@ -214,17 +214,17 @@ class PostgreSqlEventStoreIntegrationTest {
         );
 
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", newEvents, 0L) // Wrong version
+                eventStore.appendEvents(aggregateId, "Account", newEvents, -1L) // Wrong version (aggregate already exists)
             )
             .expectError(ConcurrencyException.class)
             .verify();
 
-        // Try with correct expected version
+        // Try with correct expected version (after 1 event, version is 0)
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", newEvents, 1L) // Correct version
+                eventStore.appendEvents(aggregateId, "Account", newEvents, 0L) // Correct version
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 2, 1);
+                assertEventStream(stream, aggregateId, "Account", 1, 1);
             })
             .verifyComplete();
     }
@@ -240,14 +240,14 @@ class PostgreSqlEventStoreIntegrationTest {
         );
 
         // Append events
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
-        // Load from version 2
+        // Load from version 2 (4 events appended, so versions are 0,1,2,3)
         StepVerifier.create(
                 eventStore.loadEventStream(aggregateId, "Account", 2L)
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 4, 3); // Events from version 2-4
+                assertEventStream(stream, aggregateId, "Account", 3, 2); // Events from version 2-3
                 assertEquals(2L, stream.getFromVersion());
             })
             .verifyComplete();
@@ -265,9 +265,9 @@ class PostgreSqlEventStoreIntegrationTest {
         );
 
         // Append events
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
-        // Load versions 2-4
+        // Load versions 2-4 (5 events appended, so versions are 0,1,2,3,4)
         StepVerifier.create(
                 eventStore.loadEventStream(aggregateId, "Account", 2L, 4L)
             )
@@ -287,7 +287,7 @@ class PostgreSqlEventStoreIntegrationTest {
         StepVerifier.create(
                 eventStore.getAggregateVersion(aggregateId, "Account")
             )
-            .expectNext(0L)
+            .expectNext(-1L)
             .verifyComplete();
 
         // Add some events
@@ -296,13 +296,13 @@ class PostgreSqlEventStoreIntegrationTest {
             new TestMoneyWithdrawnEvent(aggregateId, BigDecimal.valueOf(100))
         );
         
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
-        // Check version
+        // Check version (2 events appended, so version is 1)
         StepVerifier.create(
                 eventStore.getAggregateVersion(aggregateId, "Account")
             )
-            .expectNext(2L)
+            .expectNext(1L)
             .verifyComplete();
     }
 
@@ -314,11 +314,11 @@ class PostgreSqlEventStoreIntegrationTest {
         
         eventStore.appendEvents(account1, "Account", List.of(
             new TestAccountCreatedEvent(account1, "12345", BigDecimal.valueOf(1000))
-        ), 0L).block();
-        
+        ), -1L).block();
+
         eventStore.appendEvents(account2, "Account", List.of(
             new TestAccountCreatedEvent(account2, "67890", BigDecimal.valueOf(2000))
-        ), 0L).block();
+        ), -1L).block();
 
         // Stream all events
         StepVerifier.create(
@@ -337,7 +337,7 @@ class PostgreSqlEventStoreIntegrationTest {
             new TestMoneyDepositedEvent(aggregateId, BigDecimal.valueOf(50))
         );
 
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
         // Stream only withdrawal events
         StepVerifier.create(
@@ -371,7 +371,7 @@ class PostgreSqlEventStoreIntegrationTest {
         );
 
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", events, 0L, metadata)
+                eventStore.appendEvents(aggregateId, "Account", events, -1L, metadata)
             )
             .assertNext(stream -> {
                 var envelope = stream.getFirstEvent();

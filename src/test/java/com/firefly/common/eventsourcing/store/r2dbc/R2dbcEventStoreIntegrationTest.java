@@ -130,10 +130,10 @@ class R2dbcEventStoreIntegrationTest {
 
         // Append events
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", events, 0L)
+                eventStore.appendEvents(aggregateId, "Account", events, -1L)
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 3, events.size());
+                assertEventStream(stream, aggregateId, "Account", 2, events.size());
             })
             .verifyComplete();
 
@@ -142,7 +142,7 @@ class R2dbcEventStoreIntegrationTest {
                 eventStore.loadEventStream(aggregateId, "Account")
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 3, events.size());
+                assertEventStream(stream, aggregateId, "Account", 2, events.size());
                 // Verify event order and content
                 var envelopes = stream.getEvents();
                 assertEquals(events.get(0).getEventType(), envelopes.get(0).getEventType());
@@ -159,8 +159,8 @@ class R2dbcEventStoreIntegrationTest {
             new TestAccountCreatedEvent(aggregateId, "12345", BigDecimal.valueOf(1000))
         );
 
-        // Append initial events
-        eventStore.appendEvents(aggregateId, "Account", initialEvents, 0L).block();
+        // Append initial events (version -1 = new aggregate)
+        eventStore.appendEvents(aggregateId, "Account", initialEvents, -1L).block();
 
         // Try to append with wrong expected version
         List<Event> newEvents = List.of(
@@ -168,17 +168,17 @@ class R2dbcEventStoreIntegrationTest {
         );
 
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", newEvents, 0L) // Wrong version
+                eventStore.appendEvents(aggregateId, "Account", newEvents, -1L) // Wrong version (aggregate already exists)
             )
             .expectError(ConcurrencyException.class)
             .verify();
 
-        // Try with correct expected version
+        // Try with correct expected version (after 1 event, version is 0)
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", newEvents, 1L) // Correct version
+                eventStore.appendEvents(aggregateId, "Account", newEvents, 0L) // Correct version
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 2, 1);
+                assertEventStream(stream, aggregateId, "Account", 1, 1);
             })
             .verifyComplete();
     }
@@ -194,14 +194,14 @@ class R2dbcEventStoreIntegrationTest {
         );
 
         // Append events
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
-        // Load from version 2
+        // Load from version 2 (4 events appended, so versions are 0,1,2,3)
         StepVerifier.create(
                 eventStore.loadEventStream(aggregateId, "Account", 2L)
             )
             .assertNext(stream -> {
-                assertEventStream(stream, aggregateId, "Account", 4, 3); // Events from version 2-4
+                assertEventStream(stream, aggregateId, "Account", 3, 2); // Events from version 2-3
                 assertEquals(2L, stream.getFromVersion());
             })
             .verifyComplete();
@@ -219,7 +219,7 @@ class R2dbcEventStoreIntegrationTest {
         );
 
         // Append events
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
         // Load versions 2-4
         StepVerifier.create(
@@ -241,7 +241,7 @@ class R2dbcEventStoreIntegrationTest {
         StepVerifier.create(
                 eventStore.getAggregateVersion(aggregateId, "Account")
             )
-            .expectNext(0L)
+            .expectNext(-1L)
             .verifyComplete();
 
         // Add some events
@@ -250,13 +250,13 @@ class R2dbcEventStoreIntegrationTest {
             new TestMoneyWithdrawnEvent(aggregateId, BigDecimal.valueOf(100))
         );
         
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
-        // Check version
+        // Check version (2 events appended, so version is 1)
         StepVerifier.create(
                 eventStore.getAggregateVersion(aggregateId, "Account")
             )
-            .expectNext(2L)
+            .expectNext(1L)
             .verifyComplete();
     }
 
@@ -276,7 +276,7 @@ class R2dbcEventStoreIntegrationTest {
             new TestAccountCreatedEvent(aggregateId, "12345", BigDecimal.valueOf(1000))
         );
         
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
         // Check existence
         StepVerifier.create(
@@ -294,11 +294,11 @@ class R2dbcEventStoreIntegrationTest {
         
         eventStore.appendEvents(account1, "Account", List.of(
             new TestAccountCreatedEvent(account1, "12345", BigDecimal.valueOf(1000))
-        ), 0L).block();
-        
+        ), -1L).block();
+
         eventStore.appendEvents(account2, "Account", List.of(
             new TestAccountCreatedEvent(account2, "67890", BigDecimal.valueOf(2000))
-        ), 0L).block();
+        ), -1L).block();
 
         // Stream all events
         StepVerifier.create(
@@ -317,7 +317,7 @@ class R2dbcEventStoreIntegrationTest {
             new TestMoneyDepositedEvent(aggregateId, BigDecimal.valueOf(50))
         );
 
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
         // Stream only withdrawal events
         StepVerifier.create(
@@ -346,7 +346,7 @@ class R2dbcEventStoreIntegrationTest {
             new TestMoneyWithdrawnEvent(aggregateId, BigDecimal.valueOf(100))
         );
 
-        eventStore.appendEvents(aggregateId, "Account", events, 0L).block();
+        eventStore.appendEvents(aggregateId, "Account", events, -1L).block();
 
         StepVerifier.create(
                 eventStore.getStatistics()
@@ -371,7 +371,7 @@ class R2dbcEventStoreIntegrationTest {
         );
 
         StepVerifier.create(
-                eventStore.appendEvents(aggregateId, "Account", events, 0L, metadata)
+                eventStore.appendEvents(aggregateId, "Account", events, -1L, metadata)
             )
             .assertNext(stream -> {
                 var envelope = stream.getFirstEvent();
