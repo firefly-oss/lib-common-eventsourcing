@@ -21,8 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_events_aggregate_type_created ON events(aggregate
 CREATE INDEX IF NOT EXISTS idx_events_type_created ON events(event_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_events_tenant_aggregate ON events(tenant_id, aggregate_id) WHERE tenant_id IS NOT NULL;
 
--- Add GIN index for JSONB metadata queries (PostgreSQL specific)
-CREATE INDEX IF NOT EXISTS idx_events_metadata_gin ON events USING GIN (metadata jsonb_path_ops);
+-- Note: GIN index for JSONB metadata removed for database compatibility (columns are now TEXT)
 
 -- NOTE: Partial indexes with NOW() are not used here because NOW() is STABLE, not IMMUTABLE
 -- Applications should use appropriate WHERE clauses in queries for time-based filtering
@@ -33,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_events_metadata_gin ON events USING GIN (metadata
 DO $$ 
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_aggregate_version_positive') THEN
-        ALTER TABLE events ADD CONSTRAINT chk_aggregate_version_positive CHECK (aggregate_version > 0);
+        ALTER TABLE events ADD CONSTRAINT chk_aggregate_version_positive CHECK (aggregate_version >= 0);
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_event_type_not_empty') THEN
         ALTER TABLE events ADD CONSTRAINT chk_event_type_not_empty CHECK (event_type <> '');

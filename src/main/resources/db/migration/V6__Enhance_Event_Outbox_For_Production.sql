@@ -123,8 +123,8 @@ RETURNS TABLE(
     aggregate_id UUID,
     aggregate_type VARCHAR,
     event_type VARCHAR,
-    event_data JSONB,
-    metadata JSONB,
+    event_data TEXT,
+    metadata TEXT,
     correlation_id VARCHAR,
     priority INTEGER
 ) AS $$

@@ -3,7 +3,7 @@ CREATE TABLE snapshots (
     aggregate_id UUID NOT NULL,
     aggregate_type VARCHAR(255) NOT NULL,
     aggregate_version BIGINT NOT NULL,
-    snapshot_data JSONB NOT NULL,
+    snapshot_data TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     PRIMARY KEY (aggregate_id, aggregate_type)
 );
