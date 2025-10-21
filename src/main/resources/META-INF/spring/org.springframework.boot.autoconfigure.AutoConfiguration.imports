@@ -1,3 +1,4 @@
+com.firefly.common.eventsourcing.config.R2dbcBeansAutoConfiguration
 com.firefly.common.eventsourcing.config.EventSourcingAutoConfiguration
 com.firefly.common.eventsourcing.config.EventSourcingProjectionAutoConfiguration
 com.firefly.common.eventsourcing.resilience.CircuitBreakerConfiguration
