@@ -20,11 +20,20 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_type_version ON snapshots(aggregate_typ
 CREATE INDEX IF NOT EXISTS idx_snapshots_type_created ON snapshots(aggregate_type, created_at DESC);
 
 -- Add check constraints for data integrity
-ALTER TABLE snapshots ADD CONSTRAINT IF NOT EXISTS chk_snapshot_version_positive CHECK (aggregate_version > 0);
-ALTER TABLE snapshots ADD CONSTRAINT IF NOT EXISTS chk_snapshot_type_not_empty CHECK (aggregate_type <> '');
-ALTER TABLE snapshots ADD CONSTRAINT IF NOT EXISTS chk_compression_type_valid CHECK (
-    compression_type IS NULL OR compression_type IN ('GZIP', 'LZ4', 'ZSTD', 'NONE')
-);
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_snapshot_version_positive') THEN
+        ALTER TABLE snapshots ADD CONSTRAINT chk_snapshot_version_positive CHECK (aggregate_version > 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_snapshot_type_not_empty') THEN
+        ALTER TABLE snapshots ADD CONSTRAINT chk_snapshot_type_not_empty CHECK (aggregate_type <> '');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_compression_type_valid') THEN
+        ALTER TABLE snapshots ADD CONSTRAINT chk_compression_type_valid CHECK (
+            compression_type IS NULL OR compression_type IN ('GZIP', 'LZ4', 'ZSTD', 'NONE')
+        );
+    END IF;
+END $$;
 
 -- Add trigger to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_snapshots_updated_at()
