@@ -20,9 +20,18 @@ CREATE INDEX IF NOT EXISTS idx_outbox_status_priority ON event_outbox(status, pr
 CREATE INDEX IF NOT EXISTS idx_outbox_tenant_status ON event_outbox(tenant_id, status) WHERE tenant_id IS NOT NULL;
 
 -- Add check constraints for data integrity
-ALTER TABLE event_outbox ADD CONSTRAINT IF NOT EXISTS chk_outbox_priority_range CHECK (priority BETWEEN 1 AND 10);
-ALTER TABLE event_outbox ADD CONSTRAINT IF NOT EXISTS chk_outbox_max_retries_positive CHECK (max_retries >= 0);
-ALTER TABLE event_outbox ADD CONSTRAINT IF NOT EXISTS chk_outbox_retry_count_valid CHECK (retry_count >= 0 AND retry_count <= max_retries + 10);
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_outbox_priority_range') THEN
+        ALTER TABLE event_outbox ADD CONSTRAINT chk_outbox_priority_range CHECK (priority BETWEEN 1 AND 10);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_outbox_max_retries_positive') THEN
+        ALTER TABLE event_outbox ADD CONSTRAINT chk_outbox_max_retries_positive CHECK (max_retries >= 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_outbox_retry_count_valid') THEN
+        ALTER TABLE event_outbox ADD CONSTRAINT chk_outbox_retry_count_valid CHECK (retry_count >= 0 AND retry_count <= max_retries + 10);
+    END IF;
+END $$;
 
 -- Add trigger to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_outbox_updated_at()
