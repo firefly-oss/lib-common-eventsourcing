@@ -52,7 +52,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table("event_outbox")
-public class EventOutboxEntity {
+public class EventOutboxEntity implements org.springframework.data.domain.Persistable<java.util.UUID> {
 
     // Core outbox fields
     @Id
@@ -121,5 +121,15 @@ public class EventOutboxEntity {
         FAILED,
         CANCELLED
     }
-}
 
+    @Override
+    public UUID getId() {
+        return outboxId;
+    }
+
+    @Override
+    public boolean isNew() {
+        // Entity is new if it doesn't have a processed_at timestamp
+        return processedAt == null;
+    }
+}

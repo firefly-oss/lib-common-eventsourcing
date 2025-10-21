@@ -27,7 +27,6 @@ import com.firefly.common.eventsourcing.logging.EventSourcingLoggingContext;
 import com.firefly.common.eventsourcing.outbox.EventOutboxService;
 import com.firefly.common.eventsourcing.store.*;
 import com.firefly.common.eventsourcing.transaction.EventSourcingTransactionalAspect;
-import io.r2dbc.postgresql.codec.Json;
 import io.r2dbc.spi.ConnectionFactory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -108,6 +107,8 @@ public class R2dbcEventStore implements EventStore {
         this.transactionManager = transactionManager;
         this.transactionalOperator = transactionalOperator;
         this.connectionFactory = connectionFactory;
+
+        log.debug("Creating R2DBC EventStore with database: {}", connectionFactory.getMetadata().getName());
     }
 
     @Override
@@ -248,7 +249,7 @@ public class R2dbcEventStore implements EventStore {
     @Override
     public Mono<Long> getAggregateVersion(UUID aggregateId, String aggregateType) {
         String sql = """
-                SELECT COALESCE(MAX(aggregate_version), 0) as version
+                SELECT COALESCE(MAX(aggregate_version), -1) as version
                 FROM events 
                 WHERE aggregate_id = :aggregateId AND aggregate_type = :aggregateType
                 """;
@@ -258,13 +259,13 @@ public class R2dbcEventStore implements EventStore {
                 .bind("aggregateType", aggregateType)
                 .map(row -> row.get("version", Long.class))
                 .one()
-                .defaultIfEmpty(0L);
+                .defaultIfEmpty(-1L);
     }
 
     @Override
     public Mono<Boolean> aggregateExists(UUID aggregateId, String aggregateType) {
         return getAggregateVersion(aggregateId, aggregateType)
-                .map(version -> version > 0);
+                .map(version -> version >= 0);
     }
 
     @Override
@@ -359,7 +360,7 @@ public class R2dbcEventStore implements EventStore {
         return databaseClient.sql(sql)
                 .map(row -> row.get("max_sequence", Long.class))
                 .one()
-                .defaultIfEmpty(0L);
+                .defaultIfEmpty(-1L);
     }
 
     @Override
@@ -457,9 +458,9 @@ public class R2dbcEventStore implements EventStore {
 
     private Mono<Void> insertEvents(List<EventEnvelope> envelopes) {
         String sql = """
-                INSERT INTO events (event_id, aggregate_id, aggregate_type, aggregate_version, 
+                INSERT INTO events (event_id, aggregate_id, aggregate_type, aggregate_version,
                                   global_sequence, event_type, event_data, metadata, created_at)
-                VALUES (:eventId, :aggregateId, :aggregateType, :aggregateVersion, 
+                VALUES (:eventId, :aggregateId, :aggregateType, :aggregateVersion,
                        :globalSequence, :eventType, :eventData, :metadata, :createdAt)
                 """;
 
@@ -498,20 +499,9 @@ public class R2dbcEventStore implements EventStore {
             Long aggregateVersion = row.get("aggregate_version", Long.class);
             Long globalSequence = row.get("global_sequence", Long.class);
             String eventType = row.get("event_type", String.class);
-            // Handle JSONB columns - try Json first, fallback to String for H2 compatibility
-            String eventData;
-            String metadataJson;
-            
-            try {
-                Json eventDataJson = row.get("event_data", Json.class);
-                eventData = eventDataJson != null ? eventDataJson.asString() : null;
-                Json metadataJsonObj = row.get("metadata", Json.class);
-                metadataJson = metadataJsonObj != null ? metadataJsonObj.asString() : null;
-            } catch (Exception e) {
-                // Fallback for databases that don't support Json type (like H2)
-                eventData = row.get("event_data", String.class);
-                metadataJson = row.get("metadata", String.class);
-            }
+            // Read TEXT columns directly (database-agnostic)
+            String eventData = row.get("event_data", String.class);
+            String metadataJson = row.get("metadata", String.class);
             Instant createdAt = row.get("created_at", Instant.class);
 
             Event event = deserializeEvent(eventData, eventType);
@@ -563,29 +553,15 @@ public class R2dbcEventStore implements EventStore {
     }
     
     /**
-     * Binds JSON data to the database client spec, handling different database types.
-     * Uses PostgreSQL Json type for PostgreSQL, falls back to String for other databases.
+     * Binds JSON data to the database client spec as TEXT.
+     * Database-agnostic approach using TEXT columns for JSON data.
      */
-    private DatabaseClient.GenericExecuteSpec bindJsonData(DatabaseClient.GenericExecuteSpec spec, 
+    private DatabaseClient.GenericExecuteSpec bindJsonData(DatabaseClient.GenericExecuteSpec spec,
                                                           String paramName, String jsonData) {
-        // Detect database type by checking connection factory
-        boolean isPostgreSQL = connectionFactory.getClass().getSimpleName().contains("Postgresql");
-        
         if (jsonData == null) {
-            if (isPostgreSQL) {
-                return spec.bindNull(paramName, Json.class);
-            } else {
-                return spec.bindNull(paramName, String.class);
-            }
+            return spec.bindNull(paramName, String.class);
         }
-        
-        if (isPostgreSQL) {
-            // Use PostgreSQL Json type
-            return spec.bind(paramName, Json.of(jsonData));
-        } else {
-            // Use String for H2 and other databases
-            return spec.bind(paramName, jsonData);
-        }
+        return spec.bind(paramName, jsonData);
     }
 
     /**
