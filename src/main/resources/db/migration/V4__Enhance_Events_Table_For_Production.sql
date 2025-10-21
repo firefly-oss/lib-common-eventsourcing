@@ -24,14 +24,24 @@ CREATE INDEX IF NOT EXISTS idx_events_tenant_aggregate ON events(tenant_id, aggr
 -- Add GIN index for JSONB metadata queries (PostgreSQL specific)
 CREATE INDEX IF NOT EXISTS idx_events_metadata_gin ON events USING GIN (metadata jsonb_path_ops);
 
--- Add partial indexes for performance
-CREATE INDEX IF NOT EXISTS idx_events_recent ON events(created_at DESC) WHERE created_at > NOW() - INTERVAL '30 days';
-CREATE INDEX IF NOT EXISTS idx_events_aggregate_recent ON events(aggregate_id, aggregate_version DESC) WHERE created_at > NOW() - INTERVAL '90 days';
+-- NOTE: Partial indexes with NOW() are not used here because NOW() is STABLE, not IMMUTABLE
+-- Applications should use appropriate WHERE clauses in queries for time-based filtering
+-- The idx_events_aggregate_type_created index will handle most time-based queries efficiently
 
 -- Add check constraints for data integrity
-ALTER TABLE events ADD CONSTRAINT IF NOT EXISTS chk_aggregate_version_positive CHECK (aggregate_version > 0);
-ALTER TABLE events ADD CONSTRAINT IF NOT EXISTS chk_event_type_not_empty CHECK (event_type <> '');
-ALTER TABLE events ADD CONSTRAINT IF NOT EXISTS chk_aggregate_type_not_empty CHECK (aggregate_type <> '');
+-- Note: Using DO blocks to handle constraint creation idempotently
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_aggregate_version_positive') THEN
+        ALTER TABLE events ADD CONSTRAINT chk_aggregate_version_positive CHECK (aggregate_version > 0);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_event_type_not_empty') THEN
+        ALTER TABLE events ADD CONSTRAINT chk_event_type_not_empty CHECK (event_type <> '');
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_aggregate_type_not_empty') THEN
+        ALTER TABLE events ADD CONSTRAINT chk_aggregate_type_not_empty CHECK (aggregate_type <> '');
+    END IF;
+END $$;
 
 -- Add trigger to automatically update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_events_updated_at()
